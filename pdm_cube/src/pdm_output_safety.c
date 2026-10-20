@@ -24,7 +24,7 @@ void PDM_OutputSafety_Step(PDM_OutputSafety *s, const PDM_OutputPolicy *p,
     if (p == NULL || in == NULL || p->startup_ms > INT32_MAX ||
         p->retry_cooldown_ms > INT32_MAX ||
         (p->max_retries != 0 && p->retry_cooldown_ms == 0) ||
-        s->state < PDM_OUTPUT_OFF || s->state > PDM_OUTPUT_LOCKOUT) {
+        (unsigned)s->state > (unsigned)PDM_OUTPUT_LOCKOUT) {
         s->latched_faults |= PDM_FAULT_POLICY_INVALID;
         enter(s, PDM_OUTPUT_LOCKOUT, now);
         return;
