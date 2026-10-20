@@ -9,6 +9,7 @@
 #include "r2_shared/channel_engine/channel.h"
 #include "r2_shared/vm/vm.h"
 #include "pdm_can.h"
+#include "pdm_output_safety.h"
 #include "r2_shared/channel_engine/stateful_nodes.h"
 #include "r2_shared/filters/filter.h"
 #include "r2_shared/timers/timer.h"
@@ -34,6 +35,9 @@ static FilterManager_t s_filters;
 static TimerManager_t s_timers;
 static TableManager_t s_tables;
 static CanTxManager_t s_can_tx;
+static PDM_OutputSafety s_output_safety[PDM_CHANNEL_COUNT];
+/* No automatic restart and no assumed ADC/command validity at bring-up. */
+static const PDM_OutputPolicy s_output_policy = {0, 0, 0};
 
 /* All managers together must leave SRAM for HAL, ADC, CAN, buffers and stack. */
 _Static_assert(sizeof(ChannelEngine_t) + sizeof(VM_t) +
@@ -83,6 +87,7 @@ static void pdm_register_observable_channels(void)
     Channel_Init(&s_channel_engine);
     for (i = 0; i < PDM_CHANNEL_COUNT; ++i)
     {
+        PDM_OutputSafety_Init(&s_output_safety[i], HAL_GetTick());
         /* 200..213 represent gate state (0 until output engine is validated). */
         (void)Channel_Register(&s_channel_engine, (uint16_t)(200u + i),
                                CH_TYPE_BOOL, CH_CLASS_SYSTEM, output_names[i]);
@@ -109,6 +114,9 @@ static void pdm_register_observable_channels(void)
 static void pdm_nonactuating_tick(uint32_t now_ms)
 {
     uint16_t i;
+    const PDM_OutputInputs uncommissioned = {0};
+    /* Assert the hardware interlock before processing any external input. */
+    pdm_force_all_outputs_off();
     PDM_CAN_Poll();
     Channel_BeginTick(&s_channel_engine, now_ms);
     /* Until a separately reviewed and validated power-core is integrated,
@@ -116,6 +124,12 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
      */
     for (i = 0; i < PDM_CHANNEL_COUNT; ++i)
     {
+        /* Diagnostic policy only. No ADC loader or validated demand source
+         * exists yet: false validity locks out every channel, demand is OFF.
+         * No policy state is ever connected to a physical gate or CAN TX.
+         */
+        PDM_OutputSafety_Step(&s_output_safety[i], &s_output_policy,
+                              &uncommissioned, now_ms);
         Channel_SetValue(&s_channel_engine, (uint16_t)(200u + i), 0);
     }
     Channel_SetValue(&s_channel_engine, 230u, 1);
