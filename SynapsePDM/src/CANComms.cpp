@@ -22,6 +22,7 @@
 
 #include "CANComms.h"
 #include "InputHandler.h"
+#include "CanFrameSafety.h"
 
 // Use CAN1 with ALT_2 pin configuration (PD0/PD1)
 STM32_CAN Can(CAN1, ALT_2);
@@ -1046,6 +1047,17 @@ void ReadCANMessages()
     bool inputConfigChanged = false;
     while (Can.read(msg))
     {
+        // Never interpret RTR/extended frames or read missing payload bytes.
+        if (!CanFrameSafety::IsValidInboundFrame(
+                msg.id, msg.len, msg.flags.extended, msg.flags.remote,
+                SystemParams.ChannelDataCANID,
+                SystemParams.AnalogueInputDataCANID,
+                SystemParams.ChannelConfigDataCANID,
+                SystemParams.SystemConfigDataCANID))
+        {
+            continue;
+        }
+
         if (msg.id == SystemParams.DigitalInputDataCANID)
         {
             CAN_message_t response;
