@@ -45,7 +45,7 @@ bool PDM_CAN_Init(void)
        CAN termination is left in its hardware default state. */
     s_can.Instance = CAN1;
     s_can.Init.Prescaler = 2;
-    s_can.Init.Mode = CAN_MODE_NORMAL;
+    s_can.Init.Mode = CAN_MODE_SILENT; /* Listen-only; must not ACK/influence vehicle bus */
     s_can.Init.SyncJumpWidth = CAN_SJW_1TQ;
     s_can.Init.TimeSeg1 = CAN_BS1_13TQ;
     s_can.Init.TimeSeg2 = CAN_BS2_2TQ;
