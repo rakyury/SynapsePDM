@@ -1,4 +1,4 @@
-name: STM32Cube silent CAN host regressions
+name: STM32Cube diagnostic CAN host regressions
 on:
   pull_request:
     paths: ['pdm_cube/src/pdm_can.*', 'pdm_cube/tests/test_can*', 'pdm_cube/tests/can_mocks/**', '.github/workflows/cube-can-host.yml']
@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 jobs:
-  can-monitor:
+  can-diagnostic:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

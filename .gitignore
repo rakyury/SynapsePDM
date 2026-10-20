@@ -1,2 +1,4 @@
 *.log
+/host-test-results/
+/pdm_cube/.pio/
 /SynapsePDM/keys

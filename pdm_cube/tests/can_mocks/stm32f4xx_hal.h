@@ -15,6 +15,7 @@ typedef struct {
     uint32_t FilterActivation, SlaveStartFilterBank;
 } CAN_FilterTypeDef;
 typedef struct { uint32_t StdId, ExtId, IDE, RTR, DLC; } CAN_RxHeaderTypeDef;
+typedef struct { uint32_t StdId, ExtId, IDE, RTR, DLC, TransmitGlobalTime; } CAN_TxHeaderTypeDef;
 typedef struct { uint32_t Pin, Mode, Pull, Speed, Alternate; } GPIO_InitTypeDef;
 #define CAN1 ((void *)1)
 #define GPIOD ((void *)2)
@@ -27,6 +28,7 @@ typedef struct { uint32_t Pin, Mode, Pull, Speed, Alternate; } GPIO_InitTypeDef;
 #define GPIO_SPEED_FREQ_VERY_HIGH 3u
 #define GPIO_AF9_CAN1 9u
 #define CAN_MODE_SILENT 0x80000000u
+#define CAN_MODE_NORMAL 0u
 #define CAN_SJW_1TQ 0u
 #define CAN_BS1_13TQ 0x000c0000u
 #define CAN_BS2_2TQ 0x00100000u
@@ -51,5 +53,8 @@ uint32_t HAL_CAN_GetRxFifoFillLevel(CAN_HandleTypeDef *can, uint32_t fifo);
 HAL_StatusTypeDef HAL_CAN_GetRxMessage(CAN_HandleTypeDef *can, uint32_t fifo,
                                      CAN_RxHeaderTypeDef *header, uint8_t *bytes);
 uint32_t HAL_CAN_GetError(CAN_HandleTypeDef *can);
-/* Deliberately no TX or GPIO output API: adding actuation must fail to link. */
+uint32_t HAL_CAN_GetTxMailboxesFreeLevel(CAN_HandleTypeDef *can);
+HAL_StatusTypeDef HAL_CAN_AddTxMessage(CAN_HandleTypeDef *can, CAN_TxHeaderTypeDef *header,
+                                      uint8_t *bytes, uint32_t *mailbox);
+/* No GPIO output API: this HAL transport cannot control a physical output. */
 #endif

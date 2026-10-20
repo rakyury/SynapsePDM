@@ -1,6 +1,6 @@
 /*
- * PDM HAL CAN1 bring-up: monitor-only, intentionally does not transmit,
- * interpret configuration commands, or change a hardware output.
+ * PDM HAL CAN1 diagnostic link: NORMAL mode for telemetry/RAM VM upload.
+ * It acknowledges frames but never changes a physical output or legacy config.
  * Uses the original F446 pin mapping CAN1 PD0 (RX) / PD1 (TX) AF9.
  */
 #include "pdm_can.h"
@@ -17,6 +17,14 @@ static volatile uint32_t s_errors;
 static bool s_started;
 static bool s_initialized;
 static uint32_t s_previous_error;
+static PDM_CAN_ReceiveCallback s_receiver;
+static void *s_receiver_context;
+
+void PDM_CAN_SetReceiver(PDM_CAN_ReceiveCallback callback, void *context)
+{
+    s_receiver = callback;
+    s_receiver_context = context;
+}
 
 void HAL_CAN_MspInit(CAN_HandleTypeDef *hcan)
 {
@@ -66,7 +74,7 @@ bool PDM_CAN_Init(void)
        CAN termination is left in its hardware default state. */
     s_can.Instance = CAN1;
     s_can.Init.Prescaler = 2;
-    s_can.Init.Mode = CAN_MODE_SILENT; /* Listen-only; must not ACK/influence vehicle bus */
+    s_can.Init.Mode = CAN_MODE_NORMAL; /* Diagnostic TX/upload; explicitly ACKs bus traffic. */
     s_can.Init.SyncJumpWidth = CAN_SJW_1TQ;
     s_can.Init.TimeSeg1 = CAN_BS1_13TQ;
     s_can.Init.TimeSeg2 = CAN_BS2_2TQ;
@@ -128,8 +136,8 @@ void PDM_CAN_Poll(void)
             break;
         }
 
-        /* No writes, no reconfiguration and no load actuation in this stage.
-           Ignore RTR, extended IDs and malformed DLC. */
+        /* Ignore RTR, extended IDs and malformed DLC. Only the foreground
+           diagnostic handler may inspect data; it has no output/config API. */
         if (h.IDE != CAN_ID_STD || h.RTR != CAN_RTR_DATA ||
             h.DLC > 8u || h.StdId > 0x7FFu)
         {
@@ -140,6 +148,8 @@ void PDM_CAN_Poll(void)
         s_last_id = h.StdId;
         ++s_received;
         ++frames;
+        if (s_receiver != NULL)
+            s_receiver((uint16_t)h.StdId, bytes, (uint8_t)h.DLC, s_receiver_context);
     }
 
     /* ErrorCode is a persistent HAL bitmask. Count transitions instead of
@@ -150,6 +160,22 @@ void PDM_CAN_Poll(void)
             ++s_errors;
         s_previous_error = error;
     }
+}
+
+bool PDM_CAN_Send(uint16_t id, const uint8_t bytes[8])
+{
+    CAN_TxHeaderTypeDef header = {0};
+    uint32_t mailbox;
+    if (!s_started || bytes == NULL || id < 0x580u || id > 0x583u) return false;
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&s_can) == 0u) return false;
+    header.StdId = id; header.IDE = CAN_ID_STD; header.RTR = CAN_RTR_DATA;
+    header.DLC = 8; header.TransmitGlobalTime = DISABLE;
+    /* HAL does not retain the payload pointer; it copies to mailbox registers. */
+    if (HAL_CAN_AddTxMessage(&s_can, &header, (uint8_t *)bytes, &mailbox) != HAL_OK) {
+        ++s_errors;
+        return false;
+    }
+    return true;
 }
 
 uint32_t PDM_CAN_ReceiveCount(void) { return s_received; }

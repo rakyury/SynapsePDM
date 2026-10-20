@@ -31,6 +31,13 @@ def main() -> int:
                 sources = sorted((root / 'src/r2_shared').rglob('*.c'))
             elif test.stem.startswith('test_output_safety'):
                 sources = [root / 'src/pdm_output_safety.c']
+            elif test.stem.startswith('test_link'):
+                sources = [root / 'src/pdm_link.c', root / 'src/r2_shared/vm/vm.c',
+                           root / 'src/r2_shared/channel_engine/channel.c']
+            elif test.stem == 'test_main_outputs':
+                sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c']
+                sources += sorted((root / 'src/r2_shared').rglob('*.c'))
+                includes.insert(0, root / 'tests/main_mocks')
             elif test.stem.startswith('test_can'):
                 sources = [root / 'src/pdm_can.c']
                 sources += sorted((root / 'tests/can_mocks').glob('*.c'))
