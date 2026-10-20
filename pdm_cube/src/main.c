@@ -143,6 +143,8 @@ void Error_Handler(void)
     /* If clocks were previously initialized, this asserts OFF. No ISR
      * or background task is allowed to switch the gate GPIOs back on.
      */
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
     pdm_force_all_outputs_off();
     __disable_irq();
     for (;;)
