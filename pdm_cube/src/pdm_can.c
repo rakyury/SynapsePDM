@@ -15,6 +15,8 @@ static volatile uint32_t s_received;
 static volatile uint32_t s_last_id;
 static volatile uint32_t s_errors;
 static bool s_started;
+static bool s_initialized;
+static uint32_t s_previous_error;
 
 void HAL_CAN_MspInit(CAN_HandleTypeDef *hcan)
 {
@@ -38,6 +40,25 @@ bool PDM_CAN_Init(void)
     s_received = 0;
     s_last_id = 0;
     s_errors = 0;
+    s_previous_error = HAL_CAN_ERROR_NONE;
+    /* Init may be requested again after a bus/clock error. Do not reconfigure
+       a running HAL handle or keep polling a partially initialized one. */
+    if (s_initialized)
+    {
+        bool cleanup_ok = true;
+        if (s_started && HAL_CAN_Stop(&s_can) != HAL_OK)
+            cleanup_ok = false;
+        s_started = false;
+        if (HAL_CAN_DeInit(&s_can) != HAL_OK)
+            cleanup_ok = false;
+        else
+            s_initialized = false;
+        if (!cleanup_ok)
+        {
+            ++s_errors;
+            return false;
+        }
+    }
     s_started = false;
 
     /* HSI 16 MHz APB1 / prescaler 2 / (1 + 13 + 2) tq = 500 kbit/s.
@@ -61,6 +82,9 @@ bool PDM_CAN_Init(void)
         ++s_errors;
         return false;
     }
+    /* Remember even a failed attempt: HAL may have configured GPIO/clocks
+       before returning an error, so the next attempt must deinitialize. */
+    s_initialized = true;
     if (HAL_CAN_Init(&s_can) != HAL_OK)
     {
         ++s_errors;
@@ -121,11 +145,10 @@ void PDM_CAN_Poll(void)
     /* ErrorCode is a persistent HAL bitmask. Count transitions instead of
        charging an error on every scheduling tick. */
     {
-        static uint32_t previous_error = HAL_CAN_ERROR_NONE;
         uint32_t error = HAL_CAN_GetError(&s_can);
-        if (error != HAL_CAN_ERROR_NONE && error != previous_error)
+        if (error != HAL_CAN_ERROR_NONE && error != s_previous_error)
             ++s_errors;
-        previous_error = error;
+        s_previous_error = error;
     }
 }
 
