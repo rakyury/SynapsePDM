@@ -1,0 +1,44 @@
+name: Legacy Arduino reference compile (manual)
+
+on:
+  # Superseded by pdm-cube.yml; kept for the legacy compatibility investigation.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stm32-build:
+    name: PlatformIO ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [STM32, STM32_no_bootloader]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: SynapsePDM/platformio.ini
+      - name: Install PlatformIO Core
+        run: python -m pip install 'platformio==6.1.18'
+      - name: Compile STM32 firmware
+        run: python -m platformio run --project-dir SynapsePDM --environment ${{ matrix.environment }}
+      - name: Report image size
+        if: success()
+        run: |
+          find SynapsePDM/.pio/build/${{ matrix.environment }} -maxdepth 1 -type f \
+            \( -name '*.elf' -o -name '*.bin' -o -name '*.hex' \) \
+            -printf '%f %s bytes\n' | sort
+      - name: Upload firmware artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synapse-${{ matrix.environment }}
+          path: |
+            SynapsePDM/.pio/build/${{ matrix.environment }}/*.elf
+            SynapsePDM/.pio/build/${{ matrix.environment }}/*.bin
+            SynapsePDM/.pio/build/${{ matrix.environment }}/*.hex
+          if-no-files-found: error

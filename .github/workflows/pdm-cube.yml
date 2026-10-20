@@ -2,50 +2,79 @@ name: STM32Cube PDM firmware (experimental)
 
 on:
   push:
-    branches: [feature/stm32cube-pdm]
-    paths:
-      - 'pdm_cube/**'
-      - '.github/workflows/pdm-cube.yml'
+    branches: [feature/stm32cube-pdm, 'agent/**']
   pull_request:
-    paths:
-      - 'pdm_cube/**'
-      - '.github/workflows/pdm-cube.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  r2-core-host:
-    name: R2 VM and channel engine host tests
-    runs-on: ubuntu-latest
+  host:
+    name: Cube host tests (ASan and UBSan)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build and run with address/UB sanitizers
+      - name: Build and run all available host suites
+        run: python3 pdm_cube/tests/run_host_tests.py
+      - name: Preserve host test logs and JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-host-test-results
+          path: |
+            host-test-results/*.txt
+            host-test-results/junit.xml
+          if-no-files-found: error
+
+  static-analysis:
+    name: Cube static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Analyze HAL application and shared Racing Dash C
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
-            pdm_cube/tests/test_r2_core.c \
-            pdm_cube/src/r2_shared/channel_engine/channel.c \
-            pdm_cube/src/r2_shared/channel_engine/stateful_nodes.c \
-            pdm_cube/src/r2_shared/vm/vm.c \
-            pdm_cube/src/r2_shared/filters/filter.c \
-            pdm_cube/src/r2_shared/timers/timer.c \
-            pdm_cube/src/r2_shared/tables/table.c \
-            pdm_cube/src/r2_shared/can_tx/can_tx.c \
-            -o /tmp/pdm_r2_core_test
-          /tmp/pdm_r2_core_test
+          cppcheck --version | tee cppcheck-version.txt
+          cppcheck --std=c11 --enable=warning,performance,portability --error-exitcode=1 \
+            --xml --xml-version=2 -I pdm_cube/src pdm_cube/src 2> cppcheck-cube.xml
+      - name: Preserve static analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-cppcheck
+          path: cppcheck-*
 
   cube:
-    runs-on: ubuntu-latest
+    name: STM32F446ZE HAL compile and memory
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install PlatformIO
+      - name: Install pinned PlatformIO
         run: python -m pip install 'platformio==6.1.18'
-      - name: Compile STM32Cube firmware
-        run: python -m platformio run -d pdm_cube -e stm32f446_cube
+      - name: Compile experimental STM32Cube firmware
+        run: |
+          set -o pipefail
+          python -m platformio run -d pdm_cube -e stm32f446_cube 2>&1 | tee cube-build.txt
+      - name: Record package versions and image memory
+        if: always()
+        run: |
+          python -m platformio pkg list -d pdm_cube > cube-packages.txt
+          if test -f pdm_cube/.pio/build/stm32f446_cube/firmware.elf; then
+            ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-size \
+              pdm_cube/.pio/build/stm32f446_cube/firmware.elf | tee cube-memory.txt
+            sha256sum pdm_cube/.pio/build/stm32f446_cube/firmware.{elf,bin} > cube-sha256.txt
+          fi
+      - name: Preserve build diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-build-reports
+          path: cube-*.txt
       - name: Upload experimental Cube firmware
         if: success()
         uses: actions/upload-artifact@v4
