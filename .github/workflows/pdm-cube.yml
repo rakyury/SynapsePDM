@@ -16,6 +16,20 @@ permissions:
   contents: read
 
 jobs:
+  r2-core-host:
+    name: R2 VM and channel engine host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run with address/UB sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
+            pdm_cube/tests/test_r2_core.c \
+            pdm_cube/src/r2_shared/channel_engine/channel.c \
+            pdm_cube/src/r2_shared/vm/vm.c \
+            -o /tmp/pdm_r2_core_test
+          /tmp/pdm_r2_core_test
+
   cube:
     runs-on: ubuntu-latest
     steps:
