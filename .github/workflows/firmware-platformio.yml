@@ -1,11 +1,7 @@
-name: STM32 firmware compile
+name: Legacy Arduino reference compile (manual)
 
 on:
-  push:
-    branches:
-      - fix/power-output-safety
-      - agent/firmware-build-ci
-  pull_request:
+  # Superseded by pdm-cube.yml; kept for the legacy compatibility investigation.
   workflow_dispatch:
 
 permissions:
