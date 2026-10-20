@@ -1,0 +1,16 @@
+name: Output safety policy host tests
+
+on:
+  push:
+    branches: [fix/power-output-safety]
+  pull_request:
+
+jobs:
+  output-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run host safety tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I SynapsePDM/src SynapsePDM/test/output_safety_policy_test.cpp -o /tmp/output_safety_policy_test
+          /tmp/output_safety_policy_test
