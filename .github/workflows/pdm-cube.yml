@@ -26,7 +26,12 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
             pdm_cube/tests/test_r2_core.c \
             pdm_cube/src/r2_shared/channel_engine/channel.c \
+            pdm_cube/src/r2_shared/channel_engine/stateful_nodes.c \
             pdm_cube/src/r2_shared/vm/vm.c \
+            pdm_cube/src/r2_shared/filters/filter.c \
+            pdm_cube/src/r2_shared/timers/timer.c \
+            pdm_cube/src/r2_shared/tables/table.c \
+            pdm_cube/src/r2_shared/can_tx/can_tx.c \
             -o /tmp/pdm_r2_core_test
           /tmp/pdm_r2_core_test
 
