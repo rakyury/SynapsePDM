@@ -201,6 +201,7 @@ static void update_timer_oneshot(TimerConfig_t* cfg, TimerRuntime_t* rt,
                                  bool input, bool rising_edge, uint32_t tick_ms,
                                  bool reset)
 {
+    (void)input; /* One-shot uses the rising edge, not continuous input. */
     if (reset) {
         rt->state = TIMER_IDLE;
         rt->output = 0;
