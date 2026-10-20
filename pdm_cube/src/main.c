@@ -8,6 +8,7 @@
 #include "stm32f4xx_hal.h"
 #include "r2_shared/channel_engine/channel.h"
 #include "r2_shared/vm/vm.h"
+#include "pdm_can.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -71,6 +72,12 @@ static void pdm_register_observable_channels(void)
     }
     (void)Channel_Register(&s_channel_engine, 230u, CH_TYPE_BOOL,
                            CH_CLASS_SYSTEM, "outputs_interlocked");
+    (void)Channel_Register(&s_channel_engine, 240u, CH_TYPE_NUMBER,
+                           CH_CLASS_SYSTEM, "can_rx_count");
+    (void)Channel_Register(&s_channel_engine, 241u, CH_TYPE_NUMBER,
+                           CH_CLASS_SYSTEM, "can_last_id");
+    (void)Channel_Register(&s_channel_engine, 242u, CH_TYPE_NUMBER,
+                           CH_CLASS_SYSTEM, "can_error_count");
 
     VM_Init(&s_vm, &s_channel_engine);
     Channel_SetValue(&s_channel_engine, 230u, 1);
@@ -79,6 +86,7 @@ static void pdm_register_observable_channels(void)
 static void pdm_nonactuating_tick(uint32_t now_ms)
 {
     uint16_t i;
+    PDM_CAN_Poll();
     Channel_BeginTick(&s_channel_engine, now_ms);
     /* Until a separately reviewed and validated power-core is integrated,
      * all virtual demand and CAN states are ignored by the hardware.
@@ -88,6 +96,9 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
         Channel_SetValue(&s_channel_engine, (uint16_t)(200u + i), 0);
     }
     Channel_SetValue(&s_channel_engine, 230u, 1);
+    Channel_SetValue(&s_channel_engine, 240u, (int32_t)(PDM_CAN_ReceiveCount() & 0x7fffffffu));
+    Channel_SetValue(&s_channel_engine, 241u, (int32_t)PDM_CAN_LastStandardId());
+    Channel_SetValue(&s_channel_engine, 242u, (int32_t)(PDM_CAN_ErrorCount() & 0x7fffffffu));
     VM_ExecuteAll(&s_vm);
     Channel_EndTick(&s_channel_engine);
     /* Reassert OFF in each tick even if other logic corrupts GPIO output. */
@@ -122,6 +133,11 @@ int main(void)
     HAL_Init();
     pdm_init_safe_output_gpio();
     pdm_register_observable_channels();
+    if (!PDM_CAN_Init())
+    {
+        /* Never energize hardware as a fallback for absent CAN. */
+        pdm_cube_fault_mask |= 2u;
+    }
     last_tick = HAL_GetTick();
 
     for (;;)
