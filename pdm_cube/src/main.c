@@ -9,6 +9,11 @@
 #include "r2_shared/channel_engine/channel.h"
 #include "r2_shared/vm/vm.h"
 #include "pdm_can.h"
+#include "r2_shared/channel_engine/stateful_nodes.h"
+#include "r2_shared/filters/filter.h"
+#include "r2_shared/timers/timer.h"
+#include "r2_shared/tables/table.h"
+#include "r2_shared/can_tx/can_tx.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -24,6 +29,18 @@
 /* Channel engine and VM use static, bounded storage (no heap allocation). */
 static ChannelEngine_t s_channel_engine;
 static VM_t s_vm;
+static StatefulManager_t s_stateful;
+static FilterManager_t s_filters;
+static TimerManager_t s_timers;
+static TableManager_t s_tables;
+static CanTxManager_t s_can_tx;
+
+/* All managers together must leave SRAM for HAL, ADC, CAN, buffers and stack. */
+_Static_assert(sizeof(ChannelEngine_t) + sizeof(VM_t) +
+               sizeof(StatefulManager_t) + sizeof(FilterManager_t) +
+               sizeof(TimerManager_t) + sizeof(TableManager_t) +
+               sizeof(CanTxManager_t) < 45000u,
+               "R2 dataflow allocation exceeds F446 safety budget");
 volatile uint32_t pdm_cube_heartbeat_ms = 0;
 volatile uint32_t pdm_cube_fault_mask = 0;
 static volatile uint8_t s_outputs_permitted = 0;
@@ -80,6 +97,12 @@ static void pdm_register_observable_channels(void)
                            CH_CLASS_SYSTEM, "can_error_count");
 
     VM_Init(&s_vm, &s_channel_engine);
+    Stateful_Init(&s_stateful, &s_channel_engine);
+    Filter_Init(&s_filters, &s_channel_engine);
+    Timer_Init(&s_timers, &s_channel_engine);
+    Table_Init(&s_tables, &s_channel_engine);
+    /* Null callback: no configuration may transmit CAN at bring-up. */
+    CanTx_Init(&s_can_tx, &s_channel_engine, NULL);
     Channel_SetValue(&s_channel_engine, 230u, 1);
 }
 
@@ -99,6 +122,12 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
     Channel_SetValue(&s_channel_engine, 240u, (int32_t)(PDM_CAN_ReceiveCount() & 0x7fffffffu));
     Channel_SetValue(&s_channel_engine, 241u, (int32_t)PDM_CAN_LastStandardId());
     Channel_SetValue(&s_channel_engine, 242u, (int32_t)(PDM_CAN_ErrorCount() & 0x7fffffffu));
+    /* Same deterministic R2 dataflow order; all user programs/configs empty
+       until a versioned, CRC-verified PDM configuration loader is ported. */
+    Filter_UpdateAll(&s_filters);
+    Timer_UpdateAll(&s_timers, now_ms);
+    Table_UpdateAll(&s_tables);
+    Stateful_UpdateAll(&s_stateful, PDM_TICK_PERIOD_MS);
     VM_ExecuteAll(&s_vm);
     Channel_EndTick(&s_channel_engine);
     /* Reassert OFF in each tick even if other logic corrupts GPIO output. */
