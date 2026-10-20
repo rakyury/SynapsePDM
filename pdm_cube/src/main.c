@@ -10,6 +10,7 @@
 #include "r2_shared/vm/vm.h"
 #include "pdm_can.h"
 #include "pdm_output_safety.h"
+#include "pdm_link.h"
 #include "r2_shared/channel_engine/stateful_nodes.h"
 #include "r2_shared/filters/filter.h"
 #include "r2_shared/timers/timer.h"
@@ -36,6 +37,7 @@ static TimerManager_t s_timers;
 static TableManager_t s_tables;
 static CanTxManager_t s_can_tx;
 static PDM_OutputSafety s_output_safety[PDM_CHANNEL_COUNT];
+static PDM_Link s_link;
 /* No automatic restart and no assumed ADC/command validity at bring-up. */
 static const PDM_OutputPolicy s_output_policy = {0, 0, 0};
 
@@ -43,7 +45,8 @@ static const PDM_OutputPolicy s_output_policy = {0, 0, 0};
 _Static_assert(sizeof(ChannelEngine_t) + sizeof(VM_t) +
                sizeof(StatefulManager_t) + sizeof(FilterManager_t) +
                sizeof(TimerManager_t) + sizeof(TableManager_t) +
-               sizeof(CanTxManager_t) < 45000u,
+               sizeof(CanTxManager_t) + sizeof(PDM_Link) +
+               sizeof(s_output_safety) < 45000u,
                "R2 dataflow allocation exceeds F446 safety budget");
 volatile uint32_t pdm_cube_heartbeat_ms = 0;
 volatile uint32_t pdm_cube_fault_mask = 0;
@@ -106,9 +109,17 @@ static void pdm_register_observable_channels(void)
     Filter_Init(&s_filters, &s_channel_engine);
     Timer_Init(&s_timers, &s_channel_engine);
     Table_Init(&s_tables, &s_channel_engine);
-    /* Null callback: no configuration may transmit CAN at bring-up. */
+    /* General-purpose Racing Dash CAN TX remains disabled. Only the separate
+       whitelisted diagnostic transport is enabled; no output-control frames. */
     CanTx_Init(&s_can_tx, &s_channel_engine, NULL);
     Channel_SetValue(&s_channel_engine, 230u, 1);
+}
+
+static void pdm_receive_diagnostic(uint16_t id, const uint8_t bytes[8], uint8_t dlc, void *context)
+{
+    PDM_LinkFrame frame = {.id = id, .dlc = dlc};
+    for (unsigned i = 0; i < 8; ++i) frame.data[i] = bytes[i];
+    PDM_Link_Receive((PDM_Link *)context, &frame, HAL_GetTick());
 }
 
 static void pdm_nonactuating_tick(uint32_t now_ms)
@@ -136,14 +147,20 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
     Channel_SetValue(&s_channel_engine, 240u, (int32_t)(PDM_CAN_ReceiveCount() & 0x7fffffffu));
     Channel_SetValue(&s_channel_engine, 241u, (int32_t)PDM_CAN_LastStandardId());
     Channel_SetValue(&s_channel_engine, 242u, (int32_t)(PDM_CAN_ErrorCount() & 0x7fffffffu));
-    /* Same deterministic R2 dataflow order; all user programs/configs empty
-       until a versioned, CRC-verified PDM configuration loader is ported. */
+    Channel_SetValue(&s_channel_engine, 244u, (int32_t)pdm_cube_fault_mask);
+    /* Empty manager configurations remain unchanged; the only uploaded VM is
+       the separately validated, RAM-only diagnostic expression for channel300. */
     Filter_UpdateAll(&s_filters);
     Timer_UpdateAll(&s_timers, now_ms);
     Table_UpdateAll(&s_tables);
     Stateful_UpdateAll(&s_stateful, PDM_TICK_PERIOD_MS);
-    VM_ExecuteAll(&s_vm);
+    PDM_Link_Tick(&s_link, now_ms);
     Channel_EndTick(&s_channel_engine);
+    for (unsigned sent = 0; sent < 3; ++sent) {
+        const PDM_LinkFrame *frame = PDM_Link_PeekTx(&s_link);
+        if (frame == NULL || !PDM_CAN_Send((uint16_t)frame->id, frame->data)) break;
+        PDM_Link_PopTx(&s_link);
+    }
     /* Reassert OFF in each tick even if other logic corrupts GPIO output. */
     pdm_force_all_outputs_off();
     s_outputs_permitted = 0;
@@ -178,6 +195,8 @@ int main(void)
     HAL_Init();
     pdm_init_safe_output_gpio();
     pdm_register_observable_channels();
+    PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
+    PDM_CAN_SetReceiver(pdm_receive_diagnostic, &s_link);
     if (!PDM_CAN_Init())
     {
         /* Never energize hardware as a fallback for absent CAN. */

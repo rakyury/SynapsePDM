@@ -20,12 +20,19 @@ firmware in `SynapsePDM/`.
 
 This first stage intentionally **does not energize any output**. It holds
 14 high-side gate GPIOs low and fills a fixed-size channel engine with
-read-only state and CAN receive diagnostics. An eventual output controller must be added with all of:
+diagnostic state and one bounded RAM-only VM result. An eventual output controller must be added with all of:
 dedicated ADC current sampling and calibration, independent fault arbitration,
 overcurrent trip deadlines, CAN timeout/failsafe, thermal derating, controlled
 retry FSM, watchdog, brownout handling, and PWM timer/DMA safe update.
 
-CAN1 is configured for **receive-only software behavior** at 500 kbit/s on PD0/PD1 (the peripheral remains in normal CAN mode, but the firmware has no transmit routine). Incoming frames are checked for standard 11-bit IDs, data-frame type and DLC; valid receive count, last ID and errors appear as system channels 240–242. Received data is never interpreted as output demand or controller configuration.
+CAN1 now uses **NORMAL mode**, acknowledges bus traffic, and transmits diagnostic
+telemetry at 500 kbit/s on PD0/PD1. This is no longer a silent/listen-only monitor.
+The new standard-ID protocol 0x580..0x594 is documented in
+[docs/hal-diagnostic-can.md](docs/hal-diagnostic-can.md) and the shared DBC. It
+provides heartbeat, real diagnostic channel samples and a transactional upload of
+one validated, RAM-only expression into result channel300. Legacy 0x700-series
+configuration/control commands remain unimplemented in this HAL port. No received
+message becomes output demand, a flash write or an EEPROM write.
 
 No CAN command may bypass the output interlock. **No VM expression can control
 hardware pins in this stage.** Display, modem, GPS, SD card, PWM, outputs and
@@ -67,9 +74,8 @@ hardware**, even for a bench test. Fix and validate the boot map first.
 ## Next migration steps
 
 1. Verify cube build, baseline pin map and linker/RAM use.
-2. Expand the already-compiled HAL CAN1 RX monitor to versioned 11-bit
-   command/telemetry protocol with verified DBC compatibility, TX and
-   bus-off recovery. Maintain 500 kbps and fail-closed behavior.
+2. Bench-validate the implemented diagnostic CAN v1 link, bus-off recovery,
+   transaction timing and normal-mode bus behavior. Maintain 500 kbps and OFF outputs.
 3. Implement ADC DMA for all current sense pins and calibration.
 4. Implement output protection FSM and PWM timer/DMA with atomic safe buffers.
 5. Add revisioned USB/CAN configuration protocol and PC simulator parity.
