@@ -24,6 +24,7 @@
 */
 
 #include "OutputHandler.h"
+#include "OutputSafetyPolicy.h"
 #include "SerialComms.h"
 
 // Pins to update
@@ -443,8 +444,17 @@ void UpdateOutputs()
     {
     case DIG_PWM:
     case ANA_PWM:
+    case CAN_PWM:
       if (runtimeEnabled)
       {
+        // Keep software fault lockout asserted until demand is removed.
+        if (channelLocked[i])
+        {
+          updatePWMDutyCycle(i, 0);
+          ChannelRuntime[i].ErrorFlags |= RETRY_LOCKOUT;
+          break;
+        }
+
         softStopActive[i] = false;
         softStopStartDuty[i] = 0;
         bool criticalFault = false;
@@ -470,6 +480,15 @@ void UpdateOutputs()
           measuredAmps = 0.0;
         }
 
+        // Reject unavailable or invalid battery voltage before duty compensation.
+        // Startup can call UpdateOutputs before UpdateSystem has sampled VBatt.
+        if (!OutputSafetyPolicy::IsValidPwmSupply(SystemRuntimeParams.VBatt))
+        {
+          ChannelRuntime[i].ErrorFlags |= IS_FAULT;
+          updatePWMDutyCycle(i, 0);
+          softStartActive[i] = false;
+          break;
+        }
         float squared = (VBATT_NOMINAL / SystemRuntimeParams.VBatt) * (VBATT_NOMINAL / SystemRuntimeParams.VBatt);
         int pwmActual = round(Channels[i].PWMSetDuty * squared);
         if (pwmActual > 100)
@@ -516,12 +535,12 @@ void UpdateOutputs()
           overCurrentThreshold = Channels[i].InrushCurrentThreshold;
         }
 
-        if (isVoltage > FAULT_THRESHOLD)
+        if (OutputSafetyPolicy::IsSenseFault(isVoltage, FAULT_THRESHOLD))
         {
           ChannelRuntime[i].ErrorFlags |= IS_FAULT;
           criticalFault = true;
         }
-        else if (amps > overCurrentThreshold)
+        else if (OutputSafetyPolicy::IsOverCurrent(amps, overCurrentThreshold))
         {
           ChannelRuntime[i].ErrorFlags |= CHN_OVERCURRENT;
           criticalFault = true;
@@ -543,8 +562,8 @@ void UpdateOutputs()
         int targetDuty = pwmActual;
         int rampDuty = targetDuty;
         bool ramping = false;
-        bool anaPwmDutyRiseFromZero = (Channels[i].ChanType == ANA_PWM) && !softStartActive[i] && (dutyCycles[i] == 0) && (targetDuty > 0);
-        ramping = ApplySoftStartRamp(i, risingEdge || anaPwmDutyRiseFromZero, targetDuty, rampDuty);
+        bool pwmDutyRiseFromZero = (Channels[i].ChanType == ANA_PWM || Channels[i].ChanType == CAN_PWM) && !softStartActive[i] && (dutyCycles[i] == 0) && (targetDuty > 0);
+        ramping = ApplySoftStartRamp(i, risingEdge || pwmDutyRiseFromZero, targetDuty, rampDuty);
 
         if (rampDuty > 100)
         {
@@ -555,16 +574,21 @@ void UpdateOutputs()
           rampDuty = 0;
         }
 
+        // Overcurrent or hardware IS fault must disable the output even when
+        // soft-start has finished. Do not silently retry without a cooldown.
+        if (criticalFault)
+        {
+          channelLocked[i] = true;
+          ChannelRuntime[i].ErrorFlags |= RETRY_LOCKOUT;
+          updatePWMDutyCycle(i, 0);
+          softStartActive[i] = false;
+          softStopActive[i] = false;
+          pwmCurrentFiltered[i] = 0.0f;
+          pwmCurrentFilterPrimed[i] = false;
+          break;
+        }
         if (ramping)
         {
-          if (criticalFault)
-          {
-            updatePWMDutyCycle(i, 0);
-            softStartActive[i] = false;
-            pwmCurrentFiltered[i] = 0.0f;
-            pwmCurrentFilterPrimed[i] = false;
-            break;
-          }
           updatePWMDutyCycle(i, rampDuty);
           continue;
         }
@@ -573,7 +597,7 @@ void UpdateOutputs()
       else
       {
         int rampDuty = 0;
-        if (ApplySoftStopRamp(i, fallingEdge, rampDuty))
+        if (ApplySoftStopRamp(i, fallingEdge, rampDuty) && !channelLocked[i])
         {
           updatePWMDutyCycle(i, rampDuty);
         }
@@ -583,6 +607,11 @@ void UpdateOutputs()
           pwmCurrentFiltered[i] = 0.0f;
           pwmCurrentFilterPrimed[i] = false;
         }
+        // An explicit OFF edge clears a PWM lockout for the next ON demand.
+        channelLocked[i] = false;
+        retryCount[i] = 0;
+        retriesPending[i] = false;
+        ChannelRuntime[i].ErrorFlags = 0;
       }
       break;
     case DIG:
