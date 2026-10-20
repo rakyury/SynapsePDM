@@ -118,10 +118,14 @@ void PDM_CAN_Poll(void)
         ++frames;
     }
 
-    if (HAL_CAN_GetError(&s_can) != HAL_CAN_ERROR_NONE)
+    /* ErrorCode is a persistent HAL bitmask. Count transitions instead of
+       charging an error on every scheduling tick. */
     {
-        ++s_errors;
-        (void)HAL_CAN_ResetError(&s_can);
+        static uint32_t previous_error = HAL_CAN_ERROR_NONE;
+        uint32_t error = HAL_CAN_GetError(&s_can);
+        if (error != HAL_CAN_ERROR_NONE && error != previous_error)
+            ++s_errors;
+        previous_error = error;
     }
 }
 
