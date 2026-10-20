@@ -14,3 +14,5 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I SynapsePDM/src SynapsePDM/test/output_safety_policy_test.cpp -o /tmp/output_safety_policy_test
           /tmp/output_safety_policy_test
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I SynapsePDM/src SynapsePDM/test/can_frame_safety_test.cpp -o /tmp/can_frame_safety_test
+          /tmp/can_frame_safety_test
