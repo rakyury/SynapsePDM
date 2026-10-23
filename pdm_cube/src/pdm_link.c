@@ -1,4 +1,5 @@
 #include "pdm_link.h"
+#include "pdm_start_telemetry.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -196,6 +197,7 @@ void PDM_Link_Tick(PDM_Link *link, uint32_t now)
 {
     if (link == NULL || link->channels == NULL || link->vm == NULL) return;
     expire(link, now);
+    PDM_StartTelemetry_Tick(link->start_telemetry,now);
     for (uint16_t id = 200; id <= 213; ++id) Channel_SetValue(link->channels, id, 0);
     Channel_SetValue(link->channels, 230, 1);
     Channel_SetValue(link->channels, 243, (int32_t)(now & 0x7fffffffu));
@@ -246,7 +248,7 @@ const PDM_LinkFrame *PDM_Link_PeekTx(const PDM_Link *link)
     if (link->heartbeat_pending) return &link->heartbeat;
     if (link->sample_pending) return &link->sample;
     if (link->reply_count) return &link->replies[link->reply_head];
-    return NULL;
+    return PDM_StartTelemetry_Peek(link->start_telemetry);
 }
 void PDM_Link_PopTx(PDM_Link *link)
 {
@@ -267,4 +269,8 @@ void PDM_Link_PopTx(PDM_Link *link)
         link->reply_head = (uint8_t)((link->reply_head + 1u) % PDM_LINK_REPLY_CAPACITY);
         --link->reply_count;
     }
+    else PDM_StartTelemetry_Pop(link->start_telemetry);
 }
+
+void PDM_Link_SetStartTelemetry(PDM_Link *link, struct PDM_StartTelemetry *telemetry)
+{ if(link!=NULL) link->start_telemetry=telemetry; }

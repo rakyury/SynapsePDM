@@ -415,6 +415,28 @@ CM_ BO_ 1428 "Read-only active-code CRC query; ACK followed by correlated READBA
 VAL_ 1409 Quality 0 "Valid" 1 "Unavailable" ;
 CM_ BO_ 1412 "ADC additive telemetry.100 battery mV;101 sum14 IS-sense currents mA;102 MCU DIE temperature milli-degC;110..123 individual IS-sense current mA.Only quality0/2 numeric. ADC IDs are NOT VM readable. Alternates one diagnostic/ADC sample per10ms tick; numeric gains for battery/current are nominal, not per-board calibrated.";
 VAL_ 1412 Quality 0 "FactoryCalibrated" 1 "Unavailable" 2 "NominalBoardCalibration" 3 "InvalidOrFault" 4 "StaleAcquisition" ;
+BO_ 1413 HALStartSnapshotBegin: 8 PDM
+ SG_ Version : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Length : 16|16@1+ (1,0) [0|65535] "bytes" Vector__XXX
+ SG_ Sequence : 32|32@1+ (1,0) [0|4294967295] "" Vector__XXX
+
+BO_ 1414 HALStartSnapshotData: 8 PDM
+ SG_ SequenceLow : 0|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ Index : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Byte0 : 24|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Byte1 : 32|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Byte2 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Byte3 : 48|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Byte4 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1415 HALStartSnapshotEnd: 8 PDM
+ SG_ Sequence : 0|32@1+ (1,0) [0|4294967295] "" Vector__XXX
+ SG_ CRC32 : 32|32@1+ (1,0) [0|4294967295] "" Vector__XXX
+
+CM_ BO_ 1413 "Read-only scheduler telemetry v1. Length=24+8*group_count+8*channel_count, maximum408. Capture is immutable; main hardware reports14 unavailable/inhibited/OFF without fictional budgets. See pdm_cube/docs/start-can-telemetry.md.";
+CM_ BO_ 1414 "Five-byte chunks in strict ascending index; unused final bytes zero. SequenceLow is low16 of BEGIN Sequence. At most one snapshot frame per10ms tick, after heartbeat/sample/VM replies.";
+CM_ BO_ 1415 "CRC32 IEEE/zlib over exact8 BEGIN bytes then exact payload. Publish only complete coherent validated transfer. Timeout1500ms, captureperiod1000ms, no scheduler RX commands or actuation.";
 VAL_ 1410 Operation 0 "Begin" 1 "Data" 2 "Commit" 3 "Abort" 4 "Query" ;
 VAL_ 1410 Status 0 "OK" 1 "Malformed" 2 "BusyOrWrongTransaction" 3 "Offset" 4 "CRC" 5 "InvalidBytecode" 6 "ExpiredOrNoStaging" 7 "NoActiveProgram" ;
 
