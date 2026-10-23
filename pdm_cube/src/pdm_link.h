@@ -44,12 +44,14 @@ typedef struct {
     void *adc_context;
     bool sample_is_adc;
     uint8_t adc_sample_index, adc_sample_sequences[PDM_LINK_ADC_SAMPLE_COUNT];
+    struct PDM_StartTelemetry *start_telemetry;
 } PDM_Link;
 
 /* Single-threaded API, called between ticks, never from CAN interrupt context.
  * It has no GPIO, HAL, EEPROM, flash or legacy configuration access. */
 void PDM_Link_Init(PDM_Link *link, ChannelEngine_t *channels, VM_t *vm);
 void PDM_Link_SetADCReader(PDM_Link *link, PDM_LinkADCReader reader, void *context);
+void PDM_Link_SetStartTelemetry(PDM_Link *link, struct PDM_StartTelemetry *telemetry);
 void PDM_Link_Receive(PDM_Link *link, const PDM_LinkFrame *frame, uint32_t now_ms);
 void PDM_Link_Tick(PDM_Link *link, uint32_t now_ms);
 const PDM_LinkFrame *PDM_Link_PeekTx(const PDM_Link *link);

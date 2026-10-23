@@ -754,3 +754,17 @@ This section is intentionally more operational than the DBC. It calls out the pa
 ### Analogue Value Scaling
 - Input voltage is sent in millivolts using a 16-bit unsigned big-endian field.
 - Converted analogue values are sent as signed 32-bit big-endian integers scaled by `1000`.
+
+HAL read-only scheduler snapshots v1 (no received scheduler commands):
+0x585 BEGIN: version1:u8,reserved0:u8,length:u16,sequence:u32 LE.
+0x586 DATA: sequence_low16:u16,index:u8,payload5; finalpaddingzero.
+0x587 END: sequence:u32,CRC32:u32 IEEE/zlib over8BEGIN bytes+exactpayload.
+Payload24-byte header profile/count/flags/slots/reservedslots/groups/queue/zero,
+capturems:u32,totalbudget/reserved/measuredmA:u32; groups8bytesbudget/reserve;
+channels8bytes state+slotbit7,reason,queueposition,group,reservemA.
+Maximum408bytes, capture1000ms, deadline1500ms, oneframe/tick after oldtraffic.
+Main hardware14 unavailable/inhibited/OFF, zerosareunknown placeholders.
+Flags bit4 marks unavailable measured current and requires inhibit; measured payload
+is zero/unknown while queue and reservations remain visible. Hardware flags12 unchanged.
+ActualC14/24 scheduler fixtures exist only in stdin simulator, never on CAN RX.
+Exact schema, freshness/replay limits: pdm_cube/docs/start-can-telemetry.md.

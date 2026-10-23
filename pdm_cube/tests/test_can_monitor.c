@@ -48,7 +48,7 @@ HAL_StatusTypeDef HAL_CAN_AddTxMessage(CAN_HandleTypeDef *can, CAN_TxHeaderTypeD
                                       uint8_t *bytes, uint32_t *mailbox)
 {
     (void)can; (void)bytes; ++tx_calls; *mailbox = 0;
-    assert(header->StdId >= 0x580 && header->StdId <= 0x584);
+    assert(header->StdId >= 0x580 && header->StdId <= 0x587);
     assert(header->DLC == 8 && header->IDE == CAN_ID_STD && header->RTR == CAN_RTR_DATA);
     return fail_stage == 7 ? HAL_ERROR : HAL_OK;
 }
@@ -112,12 +112,14 @@ int main(void)
     assert(!PDM_CAN_Send(0x580, NULL) && tx_calls == 0);
     free_mailboxes = 0; assert(!PDM_CAN_Send(0x580, payload) && tx_calls == 0);
     free_mailboxes = 3; assert(PDM_CAN_Send(0x580, payload) && tx_calls == 1);
-    assert(!PDM_CAN_Send(0x585, payload) && tx_calls == 1);
+    assert(!PDM_CAN_Send(0x588, payload) && tx_calls == 1);
     assert(PDM_CAN_Send(0x584, payload) && tx_calls == 2);
+    for(uint16_t id=0x585;id<=0x587;++id) assert(PDM_CAN_Send(id,payload));
+    assert(tx_calls==5);
     fail_stage = 7; uint32_t previous_errors = PDM_CAN_ErrorCount();
     assert(!PDM_CAN_Send(0x581, payload) && PDM_CAN_ErrorCount() == previous_errors + 1);
     fail_stage = 1; assert(!PDM_CAN_Init());
-    assert(!PDM_CAN_Send(0x580, payload) && tx_calls == 3);
+    assert(!PDM_CAN_Send(0x580, payload) && tx_calls == 6);
     puts("CAN diagnostic transport: normal mode, TX whitelist, bounded poll and fail-closed lifecycle passed");
     return 0;
 }

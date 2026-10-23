@@ -43,6 +43,14 @@ No CAN command may bypass the output interlock. **No VM expression can control
 hardware pins in this stage.** Display, modem, GPS, SD card, PWM, outputs and
 the original Cortex USB protocol are not yet ported.
 
+Read-only scheduler telemetry on0x585..0x587 now transports coherent snapshots
+with sequence, capture timestamp and CRC. Real hardware reports Synapse14 as
+uncommissioned/inhibited with unavailable budgets; it never runs the fictional
+load fixtures. The host simulator can report actual C scheduler queues, reserves
+and refusal reasons for profiles14/24 with2..4 start slots. See
+[scheduler CAN snapshots](docs/start-can-telemetry.md). All physical outputs
+remain OFF, and no scheduler control commands were added to CAN.
+
 ### Board pins retained from legacy firmware
 
 - Output 1–7 GPIOG: PG10, PG9, PG6, PG5, PG4, PG3, PG2

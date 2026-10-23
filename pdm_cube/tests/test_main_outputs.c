@@ -43,7 +43,7 @@ void PDM_ADC_HAL_Tick(uint32_t now_ms)
 }
 bool PDM_CAN_Send(uint16_t id, const uint8_t bytes[8])
 {
-    assert_off(); assert(id >= 0x580 && id <= 0x584); assert(bytes); ++tx_count;
+    assert_off(); assert(id >= 0x580 && id <= 0x587); assert(bytes); ++tx_count;
     return true;
 }
 uint32_t PDM_CAN_ReceiveCount(void) { return 0; }
@@ -58,6 +58,8 @@ int main(void)
     assert(!PDM_BoardProfile_Validate(PDM_BoardProfile_Get(24), true));
     pdm_init_safe_output_gpio(); assert_off(); assert(gpio_init_count == 2);
     pdm_register_observable_channels(); PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
+    PDM_StartTelemetry_Init(&s_start_telemetry,PDM_BoardProfile_Hardware(),NULL,NULL,false);
+    PDM_Link_SetStartTelemetry(&s_link,&s_start_telemetry);
     assert(PDM_ADC_HAL_Init(&s_adc, 0));
     PDM_Link_SetADCReader(&s_link, PDM_ADC_Read, &s_adc);
     /* A nonzero diagnostic VM result cannot become gate demand. */
@@ -77,6 +79,8 @@ int main(void)
         }
     }
     assert(adc_ticks == 50);
+    assert(s_start_telemetry.payload[0]==14 && s_start_telemetry.payload[2]==12);
+    assert(s_start_telemetry.scheduler==NULL && !s_start_telemetry.simulation);
     puts("actual main.c fake-HAL: OFF before GPIO mode/RX/TX, nonzero VM isolated, TX <=3 per tick");
     return 0;
 }

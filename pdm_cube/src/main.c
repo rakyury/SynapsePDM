@@ -11,6 +11,7 @@
 #include "pdm_can.h"
 #include "pdm_output_safety.h"
 #include "pdm_link.h"
+#include "pdm_start_telemetry.h"
 #include "pdm_adc_hal.h"
 #include "pdm_board_profile.h"
 #include "r2_shared/channel_engine/stateful_nodes.h"
@@ -40,6 +41,7 @@ static TableManager_t s_tables;
 static CanTxManager_t s_can_tx;
 static PDM_OutputSafety s_output_safety[PDM_CHANNEL_COUNT];
 static PDM_Link s_link;
+static PDM_StartTelemetry s_start_telemetry;
 static PDM_ADC s_adc;
 /* No automatic restart and no assumed ADC/command validity at bring-up. */
 static const PDM_OutputPolicy s_output_policy = {0, 0, 0};
@@ -49,7 +51,7 @@ _Static_assert(sizeof(ChannelEngine_t) + sizeof(VM_t) +
                sizeof(StatefulManager_t) + sizeof(FilterManager_t) +
                sizeof(TimerManager_t) + sizeof(TableManager_t) +
                sizeof(CanTxManager_t) + sizeof(PDM_Link) +
-               sizeof(s_output_safety) + sizeof(s_adc) < 45000u,
+               sizeof(s_output_safety) + sizeof(s_adc) + sizeof(s_start_telemetry) < 45000u,
                "R2 dataflow allocation exceeds F446 safety budget");
 volatile uint32_t pdm_cube_heartbeat_ms = 0;
 volatile uint32_t pdm_cube_fault_mask = 0;
@@ -205,6 +207,10 @@ int main(void)
         PDM_BoardProfile_Hardware()->channel_count != PDM_CHANNEL_COUNT) Error_Handler();
     pdm_register_observable_channels();
     PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
+    /* Hardware is uncommissioned. Report that fact, never simulator budgets or
+       a virtual scheduler pretending to drive these physical outputs. */
+    PDM_StartTelemetry_Init(&s_start_telemetry,PDM_BoardProfile_Hardware(),NULL,NULL,false);
+    PDM_Link_SetStartTelemetry(&s_link,&s_start_telemetry);
     pdm_force_all_outputs_off();
     if (!PDM_ADC_HAL_Init(&s_adc, HAL_GetTick())) pdm_cube_fault_mask |= 4u;
     PDM_Link_SetADCReader(&s_link, PDM_ADC_Read, &s_adc);

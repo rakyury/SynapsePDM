@@ -20,6 +20,12 @@ vectors = (
      struct.pack("<HBBi", 110, 2, 0, 36816)),
     (0x584, dict(Channel=100, Quality=4, Sequence=1, Value=0),
      struct.pack("<HBBi", 100, 4, 1, 0)),
+    (0x585, dict(Version=1, Reserved=0, Length=408, Sequence=0x12345678),
+     struct.pack('<BBHI',1,0,408,0x12345678)),
+    (0x586, dict(SequenceLow=0x5678, Index=81, Byte0=1, Byte1=2, Byte2=3, Byte3=0, Byte4=0),
+     struct.pack('<H6B',0x5678,81,1,2,3,0,0)),
+    (0x587, dict(Sequence=0x12345678, CRC32=0xffffffff),
+     struct.pack('<II',0x12345678,0xffffffff)),
     (0x590, dict(Transaction=tid, Length=128, Version=1, Reserved=0),
      struct.pack("<IHBB", tid, 128, 1, 0)),
     (0x591, dict(Transaction=tid, Offset=126, Byte0=0x42, Byte1=0xff),
@@ -34,4 +40,4 @@ for frame_id, values, expected in vectors:
     assert message.length == 8 and not message.is_extended_frame
     assert message.encode(values, strict=True) == expected, hex(frame_id)
     assert message.decode(expected, decode_choices=False) == values, hex(frame_id)
-print(f"Strict DBC: {len(database.messages)} messages; all ten HAL wire layouts match")
+print(f"Strict DBC: {len(database.messages)} messages; all {len(vectors)} HAL wire vectors match")
