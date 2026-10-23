@@ -29,13 +29,18 @@ def main() -> int:
             includes = [root / 'src']
             if test.stem == 'test_r2_core':
                 sources = sorted((root / 'src/r2_shared').rglob('*.c'))
+            elif test.stem == 'test_adc':
+                sources = [root / 'src/pdm_adc.c']
+            elif test.stem == 'test_adc_hal':
+                sources = [root / 'src/pdm_adc.c', root / 'src/pdm_adc_hal.c']
+                includes.insert(0, root / 'tests/adc_mocks')
             elif test.stem.startswith('test_output_safety'):
                 sources = [root / 'src/pdm_output_safety.c']
             elif test.stem.startswith('test_link'):
                 sources = [root / 'src/pdm_link.c', root / 'src/r2_shared/vm/vm.c',
                            root / 'src/r2_shared/channel_engine/channel.c']
             elif test.stem == 'test_main_outputs':
-                sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c']
+                sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c', root / 'src/pdm_adc.c']
                 sources += sorted((root / 'src/r2_shared').rglob('*.c'))
                 includes.insert(0, root / 'tests/main_mocks')
             elif test.stem.startswith('test_can'):

@@ -57,6 +57,12 @@ BO_ 1411 HALDiagnosticReadback: 8 PDM
  SG_ Transaction : 0|32@1+ (1,0) [1|4294967295] "" ECU
  SG_ ActiveCRC32 : 32|32@1+ (1,0) [0|4294967295] "" ECU
 
+BO_ 1412 HALADCSample: 8 PDM
+ SG_ Channel : 0|16@1+ (1,0) [0|65535] "" ECU
+ SG_ Quality : 16|8@1+ (1,0) [0|4] "" ECU
+ SG_ Sequence : 24|8@1+ (1,0) [0|255] "" ECU
+ SG_ Value : 32|32@1- (1,0) [-2147483648|2147483647] "" ECU
+
 BO_ 1424 HALDiagnosticBegin: 8 ECU
  SG_ Transaction : 0|32@1+ (1,0) [1|4294967295] "" PDM
  SG_ Length : 32|16@1+ (1,0) [1|128] "bytes" PDM
@@ -407,6 +413,8 @@ CM_ BO_ 1425 "Sequential two-byte chunks. Final odd byte requires Byte1=0. Ident
 CM_ BO_ 1426 "CRC IEEE/zlib over exact code bytes; complete buffer and strict read-only bytecode validation required before atomic replace. No automatic COMMIT retry; query CRC if ACK lost.";
 CM_ BO_ 1428 "Read-only active-code CRC query; ACK followed by correlated READBACK on success. No flash, EEPROM or output actuation.";
 VAL_ 1409 Quality 0 "Valid" 1 "Unavailable" ;
+CM_ BO_ 1412 "ADC additive telemetry.100 battery mV;101 sum14 IS-sense currents mA;102 MCU DIE temperature milli-degC;110..123 individual IS-sense current mA.Only quality0/2 numeric. ADC IDs are NOT VM readable. Alternates one diagnostic/ADC sample per10ms tick; numeric gains for battery/current are nominal, not per-board calibrated.";
+VAL_ 1412 Quality 0 "FactoryCalibrated" 1 "Unavailable" 2 "NominalBoardCalibration" 3 "InvalidOrFault" 4 "StaleAcquisition" ;
 VAL_ 1410 Operation 0 "Begin" 1 "Data" 2 "Commit" 3 "Abort" 4 "Query" ;
 VAL_ 1410 Status 0 "OK" 1 "Malformed" 2 "BusyOrWrongTransaction" 3 "Offset" 4 "CRC" 5 "InvalidBytecode" 6 "ExpiredOrNoStaging" 7 "NoActiveProgram" ;
 

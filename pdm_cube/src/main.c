@@ -11,6 +11,7 @@
 #include "pdm_can.h"
 #include "pdm_output_safety.h"
 #include "pdm_link.h"
+#include "pdm_adc_hal.h"
 #include "r2_shared/channel_engine/stateful_nodes.h"
 #include "r2_shared/filters/filter.h"
 #include "r2_shared/timers/timer.h"
@@ -38,6 +39,7 @@ static TableManager_t s_tables;
 static CanTxManager_t s_can_tx;
 static PDM_OutputSafety s_output_safety[PDM_CHANNEL_COUNT];
 static PDM_Link s_link;
+static PDM_ADC s_adc;
 /* No automatic restart and no assumed ADC/command validity at bring-up. */
 static const PDM_OutputPolicy s_output_policy = {0, 0, 0};
 
@@ -46,7 +48,7 @@ _Static_assert(sizeof(ChannelEngine_t) + sizeof(VM_t) +
                sizeof(StatefulManager_t) + sizeof(FilterManager_t) +
                sizeof(TimerManager_t) + sizeof(TableManager_t) +
                sizeof(CanTxManager_t) + sizeof(PDM_Link) +
-               sizeof(s_output_safety) < 45000u,
+               sizeof(s_output_safety) + sizeof(s_adc) < 45000u,
                "R2 dataflow allocation exceeds F446 safety budget");
 volatile uint32_t pdm_cube_heartbeat_ms = 0;
 volatile uint32_t pdm_cube_fault_mask = 0;
@@ -128,6 +130,8 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
     const PDM_OutputInputs uncommissioned = {0};
     /* Assert the hardware interlock before processing any external input. */
     pdm_force_all_outputs_off();
+    PDM_ADC_HAL_Tick(now_ms);
+    pdm_force_all_outputs_off();
     PDM_CAN_Poll();
     Channel_BeginTick(&s_channel_engine, now_ms);
     /* Until a separately reviewed and validated power-core is integrated,
@@ -135,8 +139,8 @@ static void pdm_nonactuating_tick(uint32_t now_ms)
      */
     for (i = 0; i < PDM_CHANNEL_COUNT; ++i)
     {
-        /* Diagnostic policy only. No ADC loader or validated demand source
-         * exists yet: false validity locks out every channel, demand is OFF.
+        /* Diagnostic policy only. ADC telemetry is not a commissioned safety
+         * input: false validity locks out every channel, demand remains OFF.
          * No policy state is ever connected to a physical gate or CAN TX.
          */
         PDM_OutputSafety_Step(&s_output_safety[i], &s_output_policy,
@@ -196,6 +200,10 @@ int main(void)
     pdm_init_safe_output_gpio();
     pdm_register_observable_channels();
     PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
+    pdm_force_all_outputs_off();
+    if (!PDM_ADC_HAL_Init(&s_adc, HAL_GetTick())) pdm_cube_fault_mask |= 4u;
+    PDM_Link_SetADCReader(&s_link, PDM_ADC_Read, &s_adc);
+    pdm_force_all_outputs_off();
     PDM_CAN_SetReceiver(pdm_receive_diagnostic, &s_link);
     if (!PDM_CAN_Init())
     {
