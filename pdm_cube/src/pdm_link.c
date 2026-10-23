@@ -8,6 +8,16 @@ static const uint16_t sample_ids[PDM_LINK_SAMPLE_COUNT] = {
     200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213,
     230, 240, 241, 242, 243, 244, 300
 };
+static const uint16_t adc_sample_ids[PDM_LINK_ADC_SAMPLE_COUNT] = {
+    100, 101, 102, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123
+};
+
+void PDM_Link_SetADCReader(PDM_Link *link, PDM_LinkADCReader reader, void *context)
+{
+    if (link == NULL) return;
+    link->adc_reader = reader;
+    link->adc_context = context;
+}
 
 static uint16_t get16(const uint8_t *p) { return (uint16_t)(p[0] | ((uint16_t)p[1] << 8)); }
 static uint32_t get32(const uint8_t *p)
@@ -200,7 +210,22 @@ void PDM_Link_Tick(PDM_Link *link, uint32_t now)
         link->heartbeat_pending = true; link->heartbeat_started = true;
         link->last_heartbeat_ms = now;
     }
-    {
+    if (link->sample_is_adc) {
+        const uint8_t index = link->adc_sample_index;
+        const uint16_t id = adc_sample_ids[index];
+        int32_t value = 0;
+        uint8_t quality = link->adc_reader ? link->adc_reader(link->adc_context, id, now, &value) : 1;
+        if (quality > 4) quality = 3;
+        if (quality != 0 && quality != 2) value = 0; /* No invalid numeric payload. */
+        /* Read the model again every tick, even if this slot is pending due to
+           TX congestion. Acquisition age/quality must never be frozen in queue. */
+        link->sample = (PDM_LinkFrame){.id = 0x584, .dlc = 8};
+        put16(link->sample.data, id);
+        link->sample.data[2] = quality;
+        link->sample.data[3] = link->adc_sample_sequences[index];
+        put32(&link->sample.data[4], (uint32_t)value);
+        link->sample_pending = true;
+    } else {
         const uint8_t index = link->sample_index;
         const uint16_t id = sample_ids[index];
         /* A congested HAL mailbox must not later present an old cached value
@@ -229,8 +254,14 @@ void PDM_Link_PopTx(PDM_Link *link)
     if (link->heartbeat_pending) link->heartbeat_pending = false;
     else if (link->sample_pending) {
         link->sample_pending = false;
-        ++link->sample_sequences[link->sample_index];
-        link->sample_index = (uint8_t)((link->sample_index + 1u) % PDM_LINK_SAMPLE_COUNT);
+        if (link->sample_is_adc) {
+            ++link->adc_sample_sequences[link->adc_sample_index];
+            link->adc_sample_index = (uint8_t)((link->adc_sample_index + 1u) % PDM_LINK_ADC_SAMPLE_COUNT);
+        } else {
+            ++link->sample_sequences[link->sample_index];
+            link->sample_index = (uint8_t)((link->sample_index + 1u) % PDM_LINK_SAMPLE_COUNT);
+        }
+        link->sample_is_adc = !link->sample_is_adc;
     }
     else if (link->reply_count) {
         link->reply_head = (uint8_t)((link->reply_head + 1u) % PDM_LINK_REPLY_CAPACITY);

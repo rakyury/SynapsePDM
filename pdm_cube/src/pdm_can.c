@@ -166,7 +166,7 @@ bool PDM_CAN_Send(uint16_t id, const uint8_t bytes[8])
 {
     CAN_TxHeaderTypeDef header = {0};
     uint32_t mailbox;
-    if (!s_started || bytes == NULL || id < 0x580u || id > 0x583u) return false;
+    if (!s_started || bytes == NULL || id < 0x580u || id > 0x584u) return false;
     if (HAL_CAN_GetTxMailboxesFreeLevel(&s_can) == 0u) return false;
     header.StdId = id; header.IDE = CAN_ID_STD; header.RTR = CAN_RTR_DATA;
     header.DLC = 8; header.TransmitGlobalTime = DISABLE;

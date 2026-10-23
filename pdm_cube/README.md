@@ -34,6 +34,11 @@ one validated, RAM-only expression into result channel300. Legacy 0x700-series
 configuration/control commands remain unimplemented in this HAL port. No received
 message becomes output demand, a flash write or an EEPROM write.
 
+ADC1 diagnostic acquisition now publishes battery voltage,14 IS-current
+estimates and their sum, plus MCU die temperature over0x584. See
+[ADC telemetry](docs/adc-telemetry.md) for calibration, quality, timing and
+simulation limits. These readings are not commissioned output-protection inputs.
+
 No CAN command may bypass the output interlock. **No VM expression can control
 hardware pins in this stage.** Display, modem, GPS, SD card, PWM, outputs and
 the original Cortex USB protocol are not yet ported.
@@ -43,7 +48,8 @@ the original Cortex USB protocol are not yet ported.
 - Output 1–7 GPIOG: PG10, PG9, PG6, PG5, PG4, PG3, PG2
 - Output 8–14 GPIOF: PF15, PF14, PF13, PF12, PF2, PF1, PF0
 - CAN1 RX=PD0, TX=PD1 (alternate AF9, legacy ALT_2)
-- Current-sense ADC channels: PA0..PA7, PB1, PB0, PC3..PC0
+- Current-sense ADC channels, output order: PA0..PA6, PB1, PB0, PA7, PC3..PC0
+- Battery voltage: PC4
 - Ignition input: PE2
 
 Final verification must compare these against the exact manufactured PCB and
@@ -76,7 +82,8 @@ hardware**, even for a bench test. Fix and validate the boot map first.
 1. Verify cube build, baseline pin map and linker/RAM use.
 2. Bench-validate the implemented diagnostic CAN v1 link, bus-off recovery,
    transaction timing and normal-mode bus behavior. Maintain 500 kbps and OFF outputs.
-3. Implement ADC DMA for all current sense pins and calibration.
+3. Validate diagnostic ADC calibration on the actual board; design the separate
+   fast protection acquisition path and deadlines before enabling outputs.
 4. Implement output protection FSM and PWM timer/DMA with atomic safe buffers.
 5. Add revisioned USB/CAN configuration protocol and PC simulator parity.
 6. Port storage, thermal monitoring, ignition sleep/wake, optional features.

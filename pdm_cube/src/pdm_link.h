@@ -10,6 +10,12 @@
 #define PDM_LINK_MAX_CODE 128u
 #define PDM_LINK_REPLY_CAPACITY 32u
 #define PDM_LINK_SAMPLE_COUNT 21u
+#define PDM_LINK_ADC_SAMPLE_COUNT 17u
+
+/* Returns quality 0 calibrated, 1 unavailable, 2 nominal, 3 invalid, 4 stale.
+ * No GPIO/ADC dependency in the wire layer; only the model supplies samples. */
+typedef uint8_t (*PDM_LinkADCReader)(void *context, uint16_t channel,
+                                   uint32_t now_ms, int32_t *value);
 
 typedef struct {
     uint32_t id;
@@ -34,11 +40,16 @@ typedef struct {
     uint32_t last_heartbeat_ms;
     uint16_t heartbeat_sequence;
     uint8_t sample_index, sample_sequences[PDM_LINK_SAMPLE_COUNT];
+    PDM_LinkADCReader adc_reader;
+    void *adc_context;
+    bool sample_is_adc;
+    uint8_t adc_sample_index, adc_sample_sequences[PDM_LINK_ADC_SAMPLE_COUNT];
 } PDM_Link;
 
 /* Single-threaded API, called between ticks, never from CAN interrupt context.
  * It has no GPIO, HAL, EEPROM, flash or legacy configuration access. */
 void PDM_Link_Init(PDM_Link *link, ChannelEngine_t *channels, VM_t *vm);
+void PDM_Link_SetADCReader(PDM_Link *link, PDM_LinkADCReader reader, void *context);
 void PDM_Link_Receive(PDM_Link *link, const PDM_LinkFrame *frame, uint32_t now_ms);
 void PDM_Link_Tick(PDM_Link *link, uint32_t now_ms);
 const PDM_LinkFrame *PDM_Link_PeekTx(const PDM_Link *link);

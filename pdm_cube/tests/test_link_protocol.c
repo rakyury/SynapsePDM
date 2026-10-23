@@ -141,14 +141,22 @@ static void test_shape_and_backpressure(void)
 }
 static void test_telemetry(void)
 {
-    init(); unsigned samples = 0, heartbeats = 0;
+    init(); unsigned samples = 0, heartbeats = 0, adc_samples = 0;
     bool seen[PDM_LINK_SAMPLE_COUNT] = {false};
+    bool adc_seen[PDM_LINK_ADC_SAMPLE_COUNT] = {false};
     for (uint32_t now = 0; now <= 420; now += 10) {
         PDM_Link_Tick(&link, now);
         const PDM_LinkFrame *f;
         while ((f = PDM_Link_PeekTx(&link)) != NULL) {
             if (f->id == 0x580) { assert(f->data[0] == 1 && f->data[1] == 5); ++heartbeats; }
-            else {
+            else if (f->id == 0x584) {
+                unsigned id = f->data[0] | ((unsigned)f->data[1] << 8);
+                assert(f->data[2] == 1 && get32(&f->data[4]) == 0);
+                assert(f->data[3] <= 1);
+                assert((id >= 100 && id <= 102) || (id >= 110 && id <= 123));
+                adc_seen[id <= 102 ? id - 100 : id - 110 + 3] = true;
+                ++adc_samples;
+            } else {
                 assert(f->id == 0x581); unsigned id = f->data[0] | ((unsigned)f->data[1] << 8);
                 assert(f->data[3] <= 2); ++samples;
                 if (id >= 200 && id <= 213) { assert(get32(&f->data[4]) == 0); seen[id - 200] = true; }
@@ -159,8 +167,45 @@ static void test_telemetry(void)
             PDM_Link_PopTx(&link);
         }
     }
-    assert(samples == 43 && heartbeats == 5);
+    assert(samples == 22 && adc_samples == 21 && heartbeats == 5);
     for (unsigned i = 0; i < PDM_LINK_SAMPLE_COUNT; ++i) assert(seen[i]);
+    for (unsigned i = 0; i < PDM_LINK_ADC_SAMPLE_COUNT; ++i) assert(adc_seen[i]);
+}
+static uint8_t adc_quality = 2;
+static int32_t adc_value = 12345;
+static uint32_t adc_now;
+static uint8_t read_adc(void *context, uint16_t id, uint32_t now, int32_t *value)
+{
+    assert(context == &adc_value);
+    assert(id == 100 || id == 101);
+    adc_now = now; *value = adc_value; return adc_quality;
+}
+static void test_adc_freshness(void)
+{
+    init();
+    PDM_Link_SetADCReader(&link, read_adc, &adc_value);
+    PDM_Link_Tick(&link, 0); drain(); /* diagnostic slot first */
+    assert(link.sample_is_adc);
+    PDM_Link_Tick(&link, 10);
+    const PDM_LinkFrame *f = PDM_Link_PeekTx(&link);
+    assert(f->id == 0x584 && f->data[2] == 2 && get32(&f->data[4]) == 12345);
+    /* Congestion: refresh pending numeric and quality before it is sent. */
+    adc_value = 13000; PDM_Link_Tick(&link, 20);
+    assert(get32(&PDM_Link_PeekTx(&link)->data[4]) == 13000 && adc_now == 20);
+    adc_quality = 4; PDM_Link_Tick(&link, 30);
+    f = PDM_Link_PeekTx(&link);
+    assert(f->data[2] == 4 && get32(&f->data[4]) == 0);
+    assert(link.adc_sample_index == 0 && link.adc_sample_sequences[0] == 0);
+    PDM_Link_PopTx(&link);
+    assert(!link.sample_is_adc && link.adc_sample_index == 1 && link.adc_sample_sequences[0] == 1);
+    PDM_Link_Tick(&link, 40); drain(); /* diagnostic */
+    adc_quality = 255; PDM_Link_Tick(&link, 50); f = PDM_Link_PeekTx(&link);
+    assert(f->id == 0x584 && f->data[2] == 3 && get32(&f->data[4]) == 0);
+    /* ADC IDs never become readable VM channels via registration side effects. */
+    for (unsigned id = 100; id <= 123; ++id) {
+        uint8_t source[] = {0x02, (uint8_t)id, 0, 0xff};
+        assert(!PDM_Link_ValidateBytecode(source, sizeof(source)));
+    }
 }
 static void test_validator(void)
 {
@@ -195,7 +240,7 @@ static void test_validator(void)
 }
 int main(void)
 {
-    test_upload(); test_transactions(); test_shape_and_backpressure(); test_telemetry(); test_validator();
+    test_upload(); test_transactions(); test_shape_and_backpressure(); test_telemetry(); test_validator(); test_adc_freshness();
     puts("HAL diagnostic link: transactions, CRC, strict VM, timeout, telemetry, congestion and 10000 fuzz cases passed");
     return 0;
 }

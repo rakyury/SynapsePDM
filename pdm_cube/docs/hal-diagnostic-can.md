@@ -1,7 +1,7 @@
 # HAL diagnostic CAN v1
 
 CAN now runs in NORMAL mode at500kbps on PD0/PD1, acknowledging traffic and
-transmitting only0x580..0x583. This intentionally replaces silent monitoring.
+transmitting only0x580..0x584. This intentionally replaces silent monitoring.
 The general Racing Dash CanTx callback stays null. Legacy output/configuration
 commands are not implemented; the HAL TX API rejects IDs outside the diagnostic
 range. Physical output GPIOs are forced LOW before and after every foreground
@@ -23,8 +23,8 @@ sampling. There is no VM_ExecuteAll duplication or writable output binding.
 
 RX is capped at16 frames per10ms tick. HAL TX never waits for a mailbox and sends
 at most3 frames per tick. Heartbeats have priority, then one rotating sample,
-then upload replies. Thus ordinary samples complete a21-channel round in210ms;
-with an available bus the round is bounded below500ms. During bus congestion the
+then upload replies. Diagnostic and ADC slots alternate: a21-channel diagnostic
+round takes420ms and a17-channel ADC round340ms with an available bus. During bus congestion the
 pending sample is refreshed each tick, and its index/sequence advance only after
 HAL accepts transmission. No finite telemetry deadline can be guaranteed on an
 unavailable bus; clients expire heartbeat at500ms and samples at1000ms.
@@ -44,7 +44,7 @@ authenticated; explicit client arm/confirmation does not secure a hostile bus.
 
 ## Tests and actual-C simulator
 
-Run `python pdm_cube/tests/run_host_tests.py` for all five host suites under
+Run `python pdm_cube/tests/run_host_tests.py` for all seven host suites under
 ASan/UBSan on Linux. Windows without sanitizer runtimes may pass `--no-sanitize`;
 that is not sanitizer evidence. Tests cover valid upload/CRC query, invalid shapes,
 wrong transactions, missing/conflicting/duplicate fragments, odd padding, timeout
@@ -58,7 +58,7 @@ Compile the actual C protocol+VM simulator:
 
 ```sh
 cc -std=c11 -Wall -Wextra -Werror pdm_cube/tests/link_simulator.c \
-  pdm_cube/src/pdm_link.c pdm_cube/src/r2_shared/vm/vm.c \
+  pdm_cube/src/pdm_link.c pdm_cube/src/pdm_adc.c pdm_cube/src/r2_shared/vm/vm.c \
   pdm_cube/src/r2_shared/channel_engine/channel.c -o link_simulator
 ```
 
@@ -68,6 +68,13 @@ Commands on stdin (all response frames are `IDhex 16hexbytes`, followed by END):
 - `TICK now_ms_decimal` runs the actual VM and schedules bounded telemetry.
 - `SET channel_decimal value_decimal` injects only240,241,242,244 for tests.
 - `RESET` clears all simulated state, including the RAM program.
+- `CAL vrefint temp30 temp110` supplies explicit simulated factory calibration.
+- `ADC now_ms current1 ... current14 battery vrefint temperature` injects 17 raw ADC words.
+- `ADCFAIL quality` injects acquisition quality1,3 or4, never a numeric zero.
+
+Simulator default calibration1500/1000/1300 is a test fixture, never a hardware
+fallback. RESET clears samples but retains the selected calibration fixture.
+See [ADC acquisition and calibration](adc-telemetry.md) for the0x584 extension.
 
 No real CAN adapter is opened. The simulator drains queued frames immediately;
 the firmware wrapper independently enforces its3-frame hardware mailbox budget.
