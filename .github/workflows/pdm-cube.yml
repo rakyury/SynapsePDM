@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and run all available host suites
         run: python3 pdm_cube/tests/run_host_tests.py
+      - name: Simulate board profiles and bounded start admission
+        run: python3 pdm_cube/tests/test_start_simulator.py --output host-test-results/start-simulator
       - name: Preserve host test logs and JUnit
         if: always()
         uses: actions/upload-artifact@v4
@@ -36,6 +38,7 @@ jobs:
           path: |
             host-test-results/*.txt
             host-test-results/junit.xml
+            host-test-results/start-simulator/
           if-no-files-found: error
 
   static-analysis:

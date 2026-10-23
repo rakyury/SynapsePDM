@@ -12,6 +12,7 @@
 #include "pdm_output_safety.h"
 #include "pdm_link.h"
 #include "pdm_adc_hal.h"
+#include "pdm_board_profile.h"
 #include "r2_shared/channel_engine/stateful_nodes.h"
 #include "r2_shared/filters/filter.h"
 #include "r2_shared/timers/timer.h"
@@ -26,7 +27,7 @@
                                GPIO_PIN_5 | GPIO_PIN_4 | GPIO_PIN_3 | GPIO_PIN_2)
 #define PDM_GPIOF_OUTPUT_PINS (GPIO_PIN_15 | GPIO_PIN_14 | GPIO_PIN_13 | \
                                GPIO_PIN_12 | GPIO_PIN_2 | GPIO_PIN_1 | GPIO_PIN_0)
-#define PDM_CHANNEL_COUNT 14u
+#define PDM_CHANNEL_COUNT PDM_BOARD_HARDWARE_CHANNEL_COUNT
 #define PDM_TICK_PERIOD_MS 10u
 
 /* Channel engine and VM use static, bounded storage (no heap allocation). */
@@ -198,6 +199,10 @@ int main(void)
     uint32_t last_tick;
     HAL_Init();
     pdm_init_safe_output_gpio();
+    /* Profile24 exists only as simulator metadata. The v1 wire protocol and
+       ADC pipeline remain bound to the original14 physical outputs. */
+    if (!PDM_BoardProfile_Validate(PDM_BoardProfile_Hardware(), true) ||
+        PDM_BoardProfile_Hardware()->channel_count != PDM_CHANNEL_COUNT) Error_Handler();
     pdm_register_observable_channels();
     PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
     pdm_force_all_outputs_off();

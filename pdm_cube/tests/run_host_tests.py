@@ -31,6 +31,10 @@ def main() -> int:
                 sources = sorted((root / 'src/r2_shared').rglob('*.c'))
             elif test.stem == 'test_adc':
                 sources = [root / 'src/pdm_adc.c']
+            elif test.stem == 'test_board_profile':
+                sources = [root / 'src/pdm_board_profile.c']
+            elif test.stem == 'test_start_admission':
+                sources = [root / 'src/pdm_start_admission.c']
             elif test.stem == 'test_adc_hal':
                 sources = [root / 'src/pdm_adc.c', root / 'src/pdm_adc_hal.c']
                 includes.insert(0, root / 'tests/adc_mocks')
@@ -40,7 +44,7 @@ def main() -> int:
                 sources = [root / 'src/pdm_link.c', root / 'src/r2_shared/vm/vm.c',
                            root / 'src/r2_shared/channel_engine/channel.c']
             elif test.stem == 'test_main_outputs':
-                sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c', root / 'src/pdm_adc.c']
+                sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c', root / 'src/pdm_adc.c', root / 'src/pdm_board_profile.c']
                 sources += sorted((root / 'src/r2_shared').rglob('*.c'))
                 includes.insert(0, root / 'tests/main_mocks')
             elif test.stem.startswith('test_can'):
