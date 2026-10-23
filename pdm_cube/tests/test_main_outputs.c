@@ -1,0 +1,86 @@
+/* Compile the actual main.c under a fake HAL; verify software GPIO writes,
+ * not electrical voltage, driver latency or hardware power-on behavior. */
+#include <assert.h>
+#include <stdio.h>
+#define main pdm_firmware_main
+#include "../src/main.c"
+#undef main
+
+GPIO_TypeDef mock_gpio_g, mock_gpio_f;
+static uint32_t now;
+static unsigned tx_count, gpio_init_count;
+static unsigned adc_ticks;
+static void assert_off(void)
+{
+    assert(GPIOG->BSRR == (uint32_t)PDM_GPIOG_OUTPUT_PINS << 16);
+    assert(GPIOF->BSRR == (uint32_t)PDM_GPIOF_OUTPUT_PINS << 16);
+    assert(s_outputs_permitted == 0);
+}
+HAL_StatusTypeDef HAL_Init(void) { return HAL_OK; }
+uint32_t HAL_GetTick(void) { return now; }
+void HAL_IncTick(void) { ++now; }
+void HAL_GPIO_Init(void *port, GPIO_InitTypeDef *gpio)
+{
+    assert_off(); assert(port == GPIOG || port == GPIOF); ++gpio_init_count;
+    assert(gpio->Mode == GPIO_MODE_OUTPUT_PP && gpio->Pull == GPIO_PULLDOWN);
+}
+bool PDM_CAN_Init(void) { assert_off(); return true; }
+void PDM_CAN_SetReceiver(PDM_CAN_ReceiveCallback callback, void *context)
+{ assert(callback != NULL && context != NULL); }
+void PDM_CAN_Poll(void) { assert_off(); }
+bool PDM_ADC_HAL_Init(PDM_ADC *model, uint32_t now_ms)
+{
+    assert_off(); (void)now_ms;
+    PDM_ADC_Init(model, (PDM_ADCCalibration){1500, 1000, 1300}); return true;
+}
+void PDM_ADC_HAL_Tick(uint32_t now_ms)
+{
+    assert_off(); ++adc_ticks;
+    const uint16_t raw[17] = {100,100,100,100,100,100,100,100,100,100,100,100,100,100,3000,1500,1000};
+    PDM_ADC_SubmitRaw(&s_adc, raw, now_ms);
+    /* Even a peripheral adapter disturbing GPIO is fenced before CAN work. */
+    GPIOG->BSRR = 0; GPIOF->BSRR = 0;
+}
+bool PDM_CAN_Send(uint16_t id, const uint8_t bytes[8])
+{
+    assert_off(); assert(id >= 0x580 && id <= 0x587); assert(bytes); ++tx_count;
+    return true;
+}
+uint32_t PDM_CAN_ReceiveCount(void) { return 0; }
+uint32_t PDM_CAN_LastStandardId(void) { return 0; }
+uint32_t PDM_CAN_ErrorCount(void) { return 0; }
+
+int main(void)
+{
+    assert(PDM_BoardProfile_Validate(PDM_BoardProfile_Hardware(), true));
+    assert(PDM_BoardProfile_Hardware()->id == 14);
+    assert(PDM_BoardProfile_Hardware()->channel_count == PDM_CHANNEL_COUNT);
+    assert(!PDM_BoardProfile_Validate(PDM_BoardProfile_Get(24), true));
+    pdm_init_safe_output_gpio(); assert_off(); assert(gpio_init_count == 2);
+    pdm_register_observable_channels(); PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
+    PDM_StartTelemetry_Init(&s_start_telemetry,PDM_BoardProfile_Hardware(),NULL,NULL,false);
+    PDM_Link_SetStartTelemetry(&s_link,&s_start_telemetry);
+    assert(PDM_ADC_HAL_Init(&s_adc, 0));
+    PDM_Link_SetADCReader(&s_link, PDM_ADC_Read, &s_adc);
+    /* A nonzero diagnostic VM result cannot become gate demand. */
+    const uint8_t expression[] = {1, 1, 0, 0, 0, 0xff};
+    assert(PDM_Link_ValidateBytecode(expression, sizeof(expression)));
+    for (unsigned i = 0; i < sizeof(expression); ++i) s_link.active[i] = expression[i];
+    s_link.active_length = sizeof(expression); s_link.active_valid = true;
+    for (now = 10; now <= 500; now += 10) {
+        /* Tick must reassert OFF before the CAN handler runs. */
+        GPIOG->BSRR = 0; GPIOF->BSRR = 0; tx_count = 0;
+        pdm_nonactuating_tick(now); assert_off(); assert(tx_count <= 3);
+        assert(Channel_GetValue(&s_channel_engine, 300) == 1);
+        assert(Channel_GetValue(&s_channel_engine, 230) == 1);
+        for (unsigned i = 0; i < PDM_CHANNEL_COUNT; ++i) {
+            assert(s_output_safety[i].state == PDM_OUTPUT_LOCKOUT);
+            assert(Channel_GetValue(&s_channel_engine, (uint16_t)(200 + i)) == 0);
+        }
+    }
+    assert(adc_ticks == 50);
+    assert(s_start_telemetry.payload[0]==14 && s_start_telemetry.payload[2]==12);
+    assert(s_start_telemetry.scheduler==NULL && !s_start_telemetry.simulation);
+    puts("actual main.c fake-HAL: OFF before GPIO mode/RX/TX, nonzero VM isolated, TX <=3 per tick");
+    return 0;
+}

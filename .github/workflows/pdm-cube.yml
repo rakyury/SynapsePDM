@@ -1,0 +1,100 @@
+name: STM32Cube PDM firmware (experimental)
+
+on:
+  push:
+    branches: [feature/stm32cube-pdm, 'agent/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dbc:
+    name: Shared DBC and HAL wire layouts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'cantools==45.1.0'
+      - run: python pdm_cube/tests/check_dbc.py
+
+  host:
+    name: Cube host tests (ASan and UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run all available host suites
+        run: python3 pdm_cube/tests/run_host_tests.py
+      - name: Simulate board profiles and bounded start admission
+        run: python3 pdm_cube/tests/test_start_simulator.py --output host-test-results/start-simulator
+      - name: Preserve host test logs and JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-host-test-results
+          path: |
+            host-test-results/*.txt
+            host-test-results/junit.xml
+            host-test-results/start-simulator/
+          if-no-files-found: error
+
+  static-analysis:
+    name: Cube static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Analyze HAL application and shared Racing Dash C
+        run: |
+          cppcheck --version | tee cppcheck-version.txt
+          cppcheck --std=c11 --enable=warning,performance,portability --error-exitcode=1 \
+            --xml --xml-version=2 -I pdm_cube/src pdm_cube/src 2> cppcheck-cube.xml
+      - name: Preserve static analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-cppcheck
+          path: cppcheck-*
+
+  cube:
+    name: STM32F446ZE HAL compile and memory
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned PlatformIO
+        run: python -m pip install 'platformio==6.1.18'
+      - name: Compile experimental STM32Cube firmware
+        run: |
+          set -o pipefail
+          python -m platformio run -d pdm_cube -e stm32f446_cube 2>&1 | tee cube-build.txt
+      - name: Record package versions and image memory
+        if: always()
+        run: |
+          python -m platformio pkg list -d pdm_cube > cube-packages.txt
+          if test -f pdm_cube/.pio/build/stm32f446_cube/firmware.elf; then
+            ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-size \
+              pdm_cube/.pio/build/stm32f446_cube/firmware.elf | tee cube-memory.txt
+            sha256sum pdm_cube/.pio/build/stm32f446_cube/firmware.{elf,bin} > cube-sha256.txt
+          fi
+      - name: Preserve build diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cube-build-reports
+          path: cube-*.txt
+      - name: Upload experimental Cube firmware
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdm-cube-experimental-DO-NOT-FLASH
+          path: |
+            pdm_cube/.pio/build/stm32f446_cube/*.elf
+            pdm_cube/.pio/build/stm32f446_cube/*.bin
+          if-no-files-found: error

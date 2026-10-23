@@ -1,0 +1,20 @@
+name: Cube output safety host tests
+on:
+  pull_request:
+    paths:
+      - 'pdm_cube/src/pdm_output_safety.*'
+      - 'pdm_cube/tests/test_output_safety*'
+      - '.github/workflows/cube-output-safety-host.yml'
+  push:
+    branches: [agent/fw-safety-core]
+jobs:
+  output-safety:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run safety policy with ASan and UBSan
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer pdm_cube/tests/test_output_safety.c pdm_cube/src/pdm_output_safety.c -o /tmp/output_safety_test
+          /tmp/output_safety_test

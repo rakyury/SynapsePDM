@@ -1,0 +1,21 @@
+name: STM32Cube diagnostic CAN host regressions
+on:
+  pull_request:
+    paths: ['pdm_cube/src/pdm_can.*', 'pdm_cube/tests/test_can*', 'pdm_cube/tests/can_mocks/**', '.github/workflows/cube-can-host.yml']
+  push:
+    branches: ['agent/can-protocol-hardening', 'feature/stm32cube-pdm']
+    paths: ['pdm_cube/src/pdm_can.*', 'pdm_cube/tests/test_can*', 'pdm_cube/tests/can_mocks/**', '.github/workflows/cube-can-host.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  can-diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run HAL fake regressions with sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -I pdm_cube/tests/can_mocks pdm_cube/tests/test_can_monitor.c \
+            pdm_cube/src/pdm_can.c -o /tmp/pdm_can_monitor
+          /tmp/pdm_can_monitor

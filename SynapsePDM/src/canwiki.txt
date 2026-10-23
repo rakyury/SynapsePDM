@@ -7,7 +7,80 @@ If you need the strict signal-level definition for tooling, import the DBC inste
 - **CAN format**: Standard 11-bit identifiers
 - **Default bitrate**: 500 kbps
 - **Supported bitrates in firmware**: 125 kbps, 250 kbps, 500 kbps, 1 Mbps
-- **Multi-byte encoding**: Big-endian for all 16-bit and 32-bit fields
+- **Multi-byte encoding**: Legacy 0x700-series uses big-endian. The separate HAL
+  diagnostic v1 IDs below use little-endian for all multibyte fields.
+
+## Experimental STM32Cube HAL diagnostic v1 (0x580..0x594)
+
+This separate protocol is implemented only by `pdm_cube/`, not legacy Arduino.
+Classic standard DATA frames, exactly DLC8, fixed 500kbps, one PDM per bus.
+The peripheral is in NORMAL mode and acknowledges bus traffic. All physical
+output GPIOs remain LOW. No ADC/current/temperature/input measurements are invented.
+Legacy configuration/control messages are not handled by the HAL port.
+
+| ID | Layout (little-endian, bytes left to right) |
+|----|--------------------------------------------|
+| 0x580 | version:u8=1, flags:u8, sequence:u16, uptime_ms:u32 |
+| 0x581 | channel:u16, quality:u8, per_channel_sequence:u8, value:i32 |
+| 0x582 | tid:u32, operation:u8, status:u8, next_offset:u16 |
+| 0x583 | tid:u32, active_crc32:u32 |
+| 0x584 ADC | channel:u16, quality:u8, per_channel_sequence:u8, value:i32 |
+| 0x590 BEGIN | tid:u32, length:u16 (1..128), version:u8=1, reserved:u8=0 |
+| 0x591 DATA | tid:u32, offset:u16, byte0:u8, byte1:u8 (last odd padding=0) |
+| 0x592 COMMIT | tid:u32, crc32:u32 (IEEE/zlib over exact code length) |
+| 0x593 ABORT | tid:u32, reserved:u32=0 |
+| 0x594 QUERY | tid:u32, reserved:u32=0 |
+
+Heartbeat every100ms; flags bit0 interlocked and bit2 upload-supported are always1,
+bit1 indicates a committed VM. Other bits are zero. Samples rotate through
+200..213 (gates always0),230 (interlock always1),240 (RX count),241 (last RX ID),
+242 (CAN errors),243 (uptime low31),244 (fault mask),300 (VM result). Quality0 valid,
+1 unavailable;300 remains unavailable until commit. Diagnostic/ADC sample slots
+alternate every10ms (one sample total per tick). Normal diagnostic round420ms;
+healthy-link maximum500ms. Client heartbeat freshness500ms/sample freshness1000ms.
+Sequences wrap; client accepts per-channel forward deltas1..127, rejects duplicates
+and backwards data, and clears cached telemetry/upload state on restart or expiry.
+
+ADC frame0x584 is additive; the old0x581 quality definitions and heartbeat remain
+unchanged. ADC IDs100 battery millivolts,101 sum of14 sense currents milliamps,
+102 MCU DIE temperature milli-degreesC,110..123 individual sense currents mA.
+ADC qualities:0 factory-calibrated,1 unavailable,2 nominal board calibration,
+3 invalid/saturated/fault,4 stale acquisition. Only0/2 are numeric; all others
+must produce a gap, never a live zero. Healthy ADC round340ms; acquisition
+freshness500ms and client host freshness1000ms. Pending payloads are refreshed
+from the acquisition model each tick if CAN transmission is congested.
+Battery/current gains are nominal estimates; temperature uses MCU factory trim.
+Current means IS-pin estimate, including when gates areOFF, not independently
+verified load current. Total current is available only if all14 inputs are valid.
+Plausible numeric bounds: battery0..20000mV, die-40000..125000mC,
+individual0..36816mA, sum0..515424mA (conservative rounded sense-fault ceilings).
+ADC packet loss does not refresh readings merely because diagnostic packets or
+heartbeats still arrive. ADC IDs are excluded from the VM source whitelist.
+
+ACK operation0 BEGIN,1 DATA,2 COMMIT,3 ABORT,4 QUERY. Status0 OK,1 malformed,
+2 busy/wrong transaction,3 offset,4 CRC,5 invalid bytecode,6 expired/no staging,
+7 no active program. Successful BEGIN offset0 (duplicate same-TID BEGIN returns
+existing progress); DATA returns next byte offset, COMMIT length, ABORT/QUERY0.
+COMMIT and successful QUERY ACK are followed by correlated READBACK CRC.
+
+Uploads use random nonzero32bit transaction IDs and stop-and-wait. Client requires
+explicit arm+confirmation and fresh compatible interlocked heartbeat; a successful
+send is not confirmation. Lost COMMIT reply means UNKNOWN; do not auto-retry COMMIT,
+query active CRC separately. Staging expires after1000ms inactivity with unsigned
+tick rollover. Different TID is BUSY; same-TID BEGIN never resets progress. DATA
+is sequential; identical duplicates are re-ACKed, other offsets/conflicts rejected.
+Malformed/incomplete/CRC-invalid/invalid-bytecode uploads retain the old active VM.
+ABORT only discards matching staging. Reboot clears RAM program and staging.
+
+Accepted bytecode is read-only: PUSH_CONST01, PUSH_CH02, ADD10/SUB11,
+comparison30..35, logical40..42, MIN50/MAX51, final ENDff with stack depth1, max48.
+Reads only200..213,230,240..244. No300 feedback, stores, indexing, tables, timers,
+jumps or sensor sources. ADD/SUB retain defined Racing Dash int32 wrap semantics.
+The real Racing Dash C VM computes only channel300; never output demand.
+
+See `pdm_cube/docs/hal-diagnostic-can.md` for bounded scheduling, simulator commands
+and validation limits. This is a bench-development protocol without authentication;
+host arm/confirmation is an operator guard, not protection against other bus nodes.
 
 ---
 
@@ -681,3 +754,17 @@ This section is intentionally more operational than the DBC. It calls out the pa
 ### Analogue Value Scaling
 - Input voltage is sent in millivolts using a 16-bit unsigned big-endian field.
 - Converted analogue values are sent as signed 32-bit big-endian integers scaled by `1000`.
+
+HAL read-only scheduler snapshots v1 (no received scheduler commands):
+0x585 BEGIN: version1:u8,reserved0:u8,length:u16,sequence:u32 LE.
+0x586 DATA: sequence_low16:u16,index:u8,payload5; finalpaddingzero.
+0x587 END: sequence:u32,CRC32:u32 IEEE/zlib over8BEGIN bytes+exactpayload.
+Payload24-byte header profile/count/flags/slots/reservedslots/groups/queue/zero,
+capturems:u32,totalbudget/reserved/measuredmA:u32; groups8bytesbudget/reserve;
+channels8bytes state+slotbit7,reason,queueposition,group,reservemA.
+Maximum408bytes, capture1000ms, deadline1500ms, oneframe/tick after oldtraffic.
+Main hardware14 unavailable/inhibited/OFF, zerosareunknown placeholders.
+Flags bit4 marks unavailable measured current and requires inhibit; measured payload
+is zero/unknown while queue and reservations remain visible. Hardware flags12 unchanged.
+ActualC14/24 scheduler fixtures exist only in stdin simulator, never on CAN RX.
+Exact schema, freshness/replay limits: pdm_cube/docs/start-can-telemetry.md.
