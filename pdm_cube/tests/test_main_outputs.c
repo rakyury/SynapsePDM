@@ -52,6 +52,10 @@ uint32_t PDM_CAN_ErrorCount(void) { return 0; }
 
 int main(void)
 {
+    assert(PDM_BoardProfile_Validate(PDM_BoardProfile_Hardware(), true));
+    assert(PDM_BoardProfile_Hardware()->id == 14);
+    assert(PDM_BoardProfile_Hardware()->channel_count == PDM_CHANNEL_COUNT);
+    assert(!PDM_BoardProfile_Validate(PDM_BoardProfile_Get(24), true));
     pdm_init_safe_output_gpio(); assert_off(); assert(gpio_init_count == 2);
     pdm_register_observable_channels(); PDM_Link_Init(&s_link, &s_channel_engine, &s_vm);
     assert(PDM_ADC_HAL_Init(&s_adc, 0));

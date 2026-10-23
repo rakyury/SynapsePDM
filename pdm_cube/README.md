@@ -59,6 +59,12 @@ checked before connecting a load.
 
 ## Build
 
+Portable board descriptors and a non-actuating startup scheduler are documented
+in [board profiles and simulated starts](docs/board-profiles-starts.md).
+Synapse14 remains the only hardware binding. R2 PDM24 has unassigned physical
+pins and is simulation-only; choosing it as `PDM_BOARD_PROFILE` is a compile error.
+The scheduler's virtual permissions do not connect to GPIO or the current CAN VM.
+
 ```bash
 python -m pip install platformio
 python -m platformio run -d pdm_cube -e stm32f446_cube
