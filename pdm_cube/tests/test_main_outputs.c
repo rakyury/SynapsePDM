@@ -10,6 +10,7 @@ GPIO_TypeDef mock_gpio_g, mock_gpio_f;
 static uint32_t now;
 static unsigned tx_count, gpio_init_count;
 static unsigned adc_ticks;
+static bool tx_available=true;
 static void assert_off(void)
 {
     assert(GPIOG->BSRR == (uint32_t)PDM_GPIOG_OUTPUT_PINS << 16);
@@ -44,7 +45,7 @@ void PDM_ADC_HAL_Tick(uint32_t now_ms)
 bool PDM_CAN_Send(uint16_t id, const uint8_t bytes[8])
 {
     assert_off(); assert(id >= 0x580 && id <= 0x587); assert(bytes); ++tx_count;
-    return true;
+    return tx_available;
 }
 uint32_t PDM_CAN_ReceiveCount(void) { return 0; }
 uint32_t PDM_CAN_LastStandardId(void) { return 0; }
@@ -79,6 +80,18 @@ int main(void)
         }
     }
     assert(adc_ticks == 50);
+    /* An unavailable TX mailbox (or HAL send error) cannot stall ADC, VM or
+       the repeated OFF fences. The real main retries once on each tick. */
+    tx_available=false;
+    for(now=510;now<=2510;now+=10) {
+        const unsigned before=adc_ticks; tx_count=0;
+        GPIOG->BSRR=0; GPIOF->BSRR=0;
+        pdm_nonactuating_tick(now); assert_off();
+        assert(adc_ticks==before+1 && tx_count==1);
+        assert(Channel_GetValue(&s_channel_engine,300)==1);
+    }
+    tx_available=true; tx_count=0; pdm_nonactuating_tick(2520);
+    assert_off(); assert(tx_count>0 && tx_count<=3);
     assert(s_start_telemetry.payload[0]==14 && s_start_telemetry.payload[2]==12);
     assert(s_start_telemetry.scheduler==NULL && !s_start_telemetry.simulation);
     puts("actual main.c fake-HAL: OFF before GPIO mode/RX/TX, nonzero VM isolated, TX <=3 per tick");

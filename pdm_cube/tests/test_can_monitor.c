@@ -107,10 +107,26 @@ int main(void)
     assert(!PDM_CAN_Init()); assert(init_calls == before);
     reads = 0; PDM_CAN_Poll(); assert(reads == 0);
     clock_hz = 16000000u; assert(PDM_CAN_Init());
+    /* Named HAL-reported bus-off/FIFO-overrun faults: persistent bitmasks count
+       once per transition; successful explicit reinit clears the epoch. This
+       does not simulate physical IRQ delivery or CAN automatic bus recovery. */
+    queued=0; errors=HAL_CAN_ERROR_BOF; PDM_CAN_Poll();
+    assert(PDM_CAN_ErrorCount()==1);
+    for(unsigned i=0;i<100;++i) PDM_CAN_Poll();
+    assert(PDM_CAN_ErrorCount()==1);
+    errors |= HAL_CAN_ERROR_RX_FOV0; PDM_CAN_Poll(); assert(PDM_CAN_ErrorCount()==2);
+    errors=0; PDM_CAN_Poll(); errors=HAL_CAN_ERROR_RX_FOV0; PDM_CAN_Poll();
+    assert(PDM_CAN_ErrorCount()==3);
+    errors=0; assert(PDM_CAN_Init()); assert(PDM_CAN_ErrorCount()==0);
     uint8_t payload[8] = {0};
     assert(!PDM_CAN_Send(0x700, payload) && !PDM_CAN_Send(0x590, payload));
     assert(!PDM_CAN_Send(0x580, NULL) && tx_calls == 0);
-    free_mailboxes = 0; assert(!PDM_CAN_Send(0x580, payload) && tx_calls == 0);
+    free_mailboxes = 0;
+    for(unsigned i=0;i<1000;++i) {
+        assert(!PDM_CAN_Send(0x580,payload) && tx_calls==0);
+        queued=100; reads=0; PDM_CAN_Poll(); assert(reads==16 && queued==84);
+    }
+    queued=0; assert(PDM_CAN_ErrorCount()==0);
     free_mailboxes = 3; assert(PDM_CAN_Send(0x580, payload) && tx_calls == 1);
     assert(!PDM_CAN_Send(0x588, payload) && tx_calls == 1);
     assert(PDM_CAN_Send(0x584, payload) && tx_calls == 2);

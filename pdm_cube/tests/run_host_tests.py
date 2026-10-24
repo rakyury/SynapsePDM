@@ -45,6 +45,8 @@ def main() -> int:
             elif test.stem.startswith('test_link'):
                 sources = [root / 'src/pdm_link.c', root / 'src/r2_shared/vm/vm.c',
                            root / 'src/r2_shared/channel_engine/channel.c', root / 'src/pdm_start_telemetry.c', root / 'src/pdm_board_profile.c']
+                if test.stem == 'test_link_faults':
+                    sources += [root / 'src/pdm_adc.c', root / 'src/pdm_start_admission.c']
             elif test.stem == 'test_main_outputs':
                 sources = [root / 'src/pdm_link.c', root / 'src/pdm_output_safety.c', root / 'src/pdm_adc.c', root / 'src/pdm_board_profile.c', root / 'src/pdm_start_telemetry.c']
                 sources += sorted((root / 'src/r2_shared').rglob('*.c'))

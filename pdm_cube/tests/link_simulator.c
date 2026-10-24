@@ -22,6 +22,8 @@ static PDM_StartTelemetry start_telemetry;
 static PDM_StartAdmission start_scheduler;
 static PDM_StartInputs start_inputs;
 static bool start_enabled;
+static bool feedback_frozen, total_override;
+static uint32_t injected_total;
 static uint32_t simulator_now, request_ids[24], tx_limit=3;
 /* Explicit simulator fixtures, never device calibration defaults. */
 static PDM_ADCCalibration calibration = {1500, 1000, 1300};
@@ -34,16 +36,18 @@ static void reset(void)
     PDM_StartTelemetry_Init(&start_telemetry,PDM_BoardProfile_Hardware(),NULL,NULL,false);
     PDM_Link_SetStartTelemetry(&link,&start_telemetry);
     start_enabled=false; simulator_now=0; memset(request_ids,0,sizeof(request_ids)); tx_limit=3;
+    feedback_frozen=false; total_override=false; injected_total=0;
     received = 0;
 }
 static void start_refresh(void)
 {
-    start_inputs.sampled_ms=simulator_now;
+    if(!feedback_frozen) start_inputs.sampled_ms=simulator_now;
     start_inputs.total_measured_mA=start_scheduler.config.base_load_mA;
     for(unsigned i=0;i<start_scheduler.config.channel_count;++i) {
-        start_inputs.channels[i].sampled_ms=simulator_now;
+        if(!feedback_frozen) start_inputs.channels[i].sampled_ms=simulator_now;
         start_inputs.total_measured_mA+=start_inputs.channels[i].measured_mA;
     }
+    if(total_override) start_inputs.total_measured_mA=injected_total;
 }
 static void start_tick(void)
 {
@@ -66,6 +70,7 @@ static bool start_configure(const uint32_t v[4])
     PDM_StartConfig config={.channel_count=(uint8_t)v[0],.group_count=2,.max_starts=(uint8_t)v[1],
         .total_budget_mA=v[2],.base_load_mA=20000,.request_ttl_ms=60000,.feedback_ttl_ms=1000};
     memset(&start_inputs,0,sizeof(start_inputs)); memset(request_ids,0,sizeof(request_ids));
+    feedback_frozen=false; total_override=false; injected_total=0;
     for(unsigned g=0;g<2;++g) { config.group_budget_mA[g]=v[3]; config.group_base_mA[g]=10000; start_inputs.group_healthy[g]=true; }
     for(unsigned i=0;i<v[0];++i) {
         config.channels[i]=(PDM_StartChannelConfig){.continuous_mA=10000,.start_mA=30000,
@@ -97,6 +102,42 @@ static bool words(const char *line, uint32_t *values, unsigned count)
     while (isspace((unsigned char)*line)) ++line;
     return *line == '\0';
 }
+/* Test-only fault surface. Validate the complete command before mutation. */
+static bool start_inject(const char *command, const char *line)
+{
+    uint32_t v[2];
+    if(!start_enabled) return false;
+    if(strcmp(command,"STARTAUTO")==0) {
+        if(!words(line,NULL,0)) return false;
+        total_override=false; return true;
+    }
+    if(strcmp(command,"STARTTOTAL")==0) {
+        if(!words(line,v,1) || v[0]>25000000u) return false;
+        total_override=true; injected_total=v[0]; return true;
+    }
+    if(strcmp(command,"STARTCURRENT")==0 || strcmp(command,"STARTSENSOR")==0) {
+        if(!words(line,v,2) || v[0]<1 || v[0]>start_scheduler.config.channel_count) return false;
+        if(strcmp(command,"STARTCURRENT")==0) {
+            if(v[1]>1000000u) return false;
+            start_inputs.channels[v[0]-1].measured_mA=v[1];
+        } else {
+            if(v[1]>1) return false;
+            start_inputs.channels[v[0]-1].valid=v[1]!=0;
+        }
+        return true;
+    }
+    if(strcmp(command,"STARTGROUP")==0) {
+        if(!words(line,v,2) || v[0]<1 || v[0]>start_scheduler.config.group_count || v[1]>1) return false;
+        start_inputs.group_healthy[v[0]-1]=v[1]!=0; return true;
+    }
+    if(!words(line,v,1) || v[0]>1) return false;
+    if(strcmp(command,"STARTLINK")==0) start_inputs.link_healthy=v[0]!=0;
+    else if(strcmp(command,"STARTFREEZE")==0) feedback_frozen=v[0]!=0;
+    else if(strcmp(command,"STARTHEALTH")==0) start_inputs.healthy=v[0]!=0;
+    else if(strcmp(command,"STARTINHIBIT")==0) start_inputs.inhibited=v[0]!=0;
+    else return false;
+    return true;
+}
 static int nibble(char ch)
 {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -126,6 +167,8 @@ int main(void)
             start_inputs.valid=true; valid=true;
         } else if(strcmp(command,"STARTRESET")==0 && start_enabled && words(line,NULL,0)) {
             PDM_Start_Reset(&start_scheduler,simulator_now); valid=true;
+        } else if(start_inject(command,line)) {
+            valid=true;
         } else if(strncmp(command,"START",5)==0 && start_enabled) {
             uint32_t v[1];
             if(words(line,v,1) && v[0]>=1 && v[0]<=start_scheduler.config.channel_count) {
