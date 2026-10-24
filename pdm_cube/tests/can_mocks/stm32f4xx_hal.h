@@ -42,6 +42,9 @@ typedef struct { uint32_t Pin, Mode, Pull, Speed, Alternate; } GPIO_InitTypeDef;
 #define CAN_RTR_DATA 0u
 #define CAN_RTR_REMOTE 2u
 #define HAL_CAN_ERROR_NONE 0u
+/* STM32CubeF4 HAL error-mask values; mocks do not emulate bxCAN registers. */
+#define HAL_CAN_ERROR_BOF 0x00000004u
+#define HAL_CAN_ERROR_RX_FOV0 0x00000200u
 void HAL_GPIO_Init(void *port, GPIO_InitTypeDef *gpio);
 uint32_t HAL_RCC_GetPCLK1Freq(void);
 HAL_StatusTypeDef HAL_CAN_Init(CAN_HandleTypeDef *can);
